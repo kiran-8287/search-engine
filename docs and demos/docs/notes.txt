@@ -1,0 +1,7 @@
+1) dataset - inspect and cleanup
+
+
+2)model selection, NDD
+
+
+3)indexing, explore different searches
