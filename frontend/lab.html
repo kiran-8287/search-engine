@@ -7,23 +7,33 @@
   <link rel="stylesheet" href="/assets/css/site.css">
   <script type="module" src="/assets/js/lab.js"></script>
 </head>
-<body>
-  <a class="skip" href="#main">Skip to experiments</a>
-  <header class="header"><div class="frame bar">
-    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>TechSearch</a>
-    <nav aria-label="Primary"><a href="/">Search</a><a href="/lab" aria-current="page">IR Lab</a></nav>
-  </div></header>
+<body class="lab-page">
+  <a class="skip" href="#query">Skip to comparison query</a>
+  <header class="masthead">
+    <div class="masthead-inner">
+      <a class="brand" href="/" aria-label="TechSearch home">
+        <span class="brand-mark" aria-hidden="true">[ ]</span>
+        <span class="brand-text"><strong>TechSearch</strong><span>Web development index</span></span>
+      </a>
+      <nav class="main-nav" aria-label="Primary">
+        <a id="return-search" href="/">Search</a>
+        <a href="/lab" aria-current="page">IR Lab <span aria-hidden="true">↗</span></a>
+      </nav>
+    </div>
+  </header>
   <main id="main" class="frame lab">
-    <section class="hero">
-      <h1>Information retrieval lab<span class="accent">.</span></h1>
-      <p>Compare two ranking configurations against the same local snapshot.</p>
-    </section>
+    <header class="lab-heading">
+      <h1>Information retrieval lab</h1>
+      <p>Compare ranking methods on the same local snapshot.</p>
+    </header>
     <form id="compare" class="lab-form">
-      <label class="field-label" for="query">Query</label>
-      <div class="search-line">
-        <span class="magnifier" aria-hidden="true"></span>
-        <input id="query" placeholder="Enter a query to compare" maxlength="512">
-        <button type="submit">Compare</button>
+      <label class="field-label" for="query">Comparison query</label>
+      <div class="search-form">
+        <div class="search-line">
+          <span class="magnifier" aria-hidden="true"></span>
+          <input id="query" type="search" placeholder="Enter a query to compare" maxlength="512">
+        </div>
+        <button class="button primary" type="submit">Compare</button>
       </div>
       <div id="configurations" class="comparison"></div>
     </form>
@@ -35,10 +45,19 @@
       <div id="report" class="report" aria-live="polite"></div>
     </section>
   </main>
-  <footer class="footer"><div class="frame">TechSearch <span>·</span> Local information retrieval.</div></footer>
-  <dialog id="viewer" aria-labelledby="viewer-title">
-    <div class="dialog-head"><h2 id="viewer-title">Document</h2><form method="dialog"><button class="secondary" aria-label="Close document">Close</button></form></div>
-    <div id="viewer-body" aria-live="polite"></div>
+  <footer class="page-footer"><div class="frame"><strong>TechSearch</strong><span>Local information retrieval lab</span></div></footer>
+  <dialog id="preview" class="preview" aria-labelledby="preview-title">
+    <div class="preview-top">
+      <span class="eyebrow">Source preview</span>
+      <button class="icon-button preview-close" type="button" aria-label="Close preview" autofocus>×</button>
+    </div>
+    <div class="preview-inner">
+      <div id="preview-source" class="preview-source"></div>
+      <h2 id="preview-title">Document</h2>
+      <p id="preview-status" class="status" role="status"></p>
+      <div id="preview-body"></div>
+    </div>
+    <div id="preview-footer" class="preview-footer"></div>
   </dialog>
 </body>
 </html>

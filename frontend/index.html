@@ -3,50 +3,103 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Search a local corpus of web development documentation and Stack Overflow threads.">
+  <meta name="description" content="Search MDN documentation and Stack Overflow threads in a local web development index.">
   <title>TechSearch</title>
   <link rel="stylesheet" href="/assets/css/site.css">
   <script type="module" src="/assets/js/search.js"></script>
 </head>
-<body>
-  <a class="skip" href="#main">Skip to search</a>
-  <header class="header"><div class="frame bar">
-    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>TechSearch</a>
-    <nav aria-label="Primary"><a href="/" aria-current="page">Search</a><a href="/lab">IR Lab <span aria-hidden="true">↗</span></a></nav>
-  </div></header>
-  <main id="main" class="frame">
-    <section class="hero" aria-labelledby="hero-title">
-      <h1 id="hero-title">Search the web<br class="hero-break"> development corpus<span class="accent">.</span></h1>
-      <p>Find MDN documentation and Stack Overflow threads in a local snapshot.</p>
+<body class="search-page">
+  <a class="skip" href="#query">Skip to search</a>
+  <header class="masthead">
+    <div class="masthead-inner">
+      <a class="brand" href="/" aria-label="TechSearch home">
+        <span class="brand-mark" aria-hidden="true">[ ]</span>
+        <span class="brand-text"><strong>TechSearch</strong><span>Web development index</span></span>
+      </a>
+      <div id="header-search" class="header-search" hidden></div>
+      <nav class="main-nav" aria-label="Primary">
+        <a href="/" aria-current="page">Search</a>
+        <a href="/lab">IR Lab <span aria-hidden="true">↗</span></a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="frame search-main">
+    <section id="home" class="search-home" aria-labelledby="home-title">
+      <span class="brand-mark home-mark" aria-hidden="true">[ ]</span>
+      <h1 id="home-title">TechSearch</h1>
+      <p>Search MDN documentation and Stack Overflow in a local web development index.</p>
+      <div id="home-search" class="home-search">
+        <form id="search-form" class="search-form" role="search">
+          <label for="query" class="sr-only">Search the corpus</label>
+          <div class="search-line">
+            <span class="magnifier" aria-hidden="true"></span>
+            <input id="query" name="q" type="search" placeholder="Search web development…" maxlength="512" list="completions" autocomplete="off">
+            <datalist id="completions"></datalist>
+            <button id="clear-query" class="icon-button clear-query" type="button" aria-label="Clear search" hidden>×</button>
+            <kbd class="shortcut" aria-hidden="true">Ctrl K</kbd>
+          </div>
+          <button class="button primary search-submit" type="submit" aria-label="Search">
+            <span class="magnifier" aria-hidden="true"></span><span class="search-submit-label">Search</span>
+          </button>
+        </form>
+      </div>
+      <div class="examples" aria-label="Example searches">
+        <span>Try</span>
+        <button class="example" type="button">CORS</button>
+        <button class="example" type="button">Promise.all</button>
+        <button class="example" type="button">CSS grid</button>
+        <button class="example" type="button">event delegation</button>
+      </div>
     </section>
-    <form id="search" class="search-form" role="search">
-      <label class="sr-only" for="query">Search the corpus</label>
-      <div class="search-line">
-        <span class="magnifier" aria-hidden="true"></span>
-        <input id="query" name="q" type="search" placeholder="Try Promise.all, CSS grid, or CORS" maxlength="512" list="completions">
-        <datalist id="completions"></datalist>
-        <button type="submit">Search</button>
+
+    <section id="results-view" aria-label="Search results" hidden>
+      <div class="result-toolbar">
+        <div id="source-tabs" class="source-tabs" role="tablist" aria-label="Source">
+          <button id="source-all" type="button" role="tab" aria-controls="results-panel" aria-selected="true" data-source="">All results</button>
+          <button id="source-mdn" type="button" role="tab" aria-controls="results-panel" aria-selected="false" tabindex="-1" data-source="mdn">MDN Docs</button>
+          <button id="source-stackoverflow" type="button" role="tab" aria-controls="results-panel" aria-selected="false" tabindex="-1" data-source="stackoverflow">Stack Overflow</button>
+        </div>
+        <details class="search-tips">
+          <summary>Search tips</summary>
+          <div><p>Put an exact phrase in quotes. Try <code>code:===</code> for code matches or <code>querySel*</code> for a prefix.</p><p>Press <kbd>/</kbd> or <kbd>Ctrl K</kbd> to focus search. On a Mac, use <kbd>⌘ K</kbd>.</p></div>
+        </details>
       </div>
-      <div class="filters">
-        <label>Source <select id="source"><option value="">All sources</option><option value="mdn">MDN</option><option value="stackoverflow">Stack Overflow</option></select></label>
-        <label>Topic <select id="topic"><option value="">All topics</option></select></label>
-        <span class="shortcut">Focus search <kbd>/</kbd></span>
+      <div class="result-filters">
+        <div class="topic-control">
+          <label for="topic">Topic</label>
+          <select id="topic" name="topic"><option value="">All topics</option></select>
+        </div>
+        <button id="refine" class="button secondary" type="button" hidden>Refine with feedback</button>
+        <a id="export" class="subtle-link export-link" hidden>Export JSON</a>
       </div>
-    </form>
-    <p id="status" class="status" role="status" aria-live="polite"></p>
-    <div id="warnings" class="warnings" aria-live="polite"></div>
-    <div id="suggestions" class="suggestions"></div>
-    <section id="results-section" hidden aria-labelledby="results-title" aria-busy="false">
-      <div class="section-bar"><h2 id="results-title">Results</h2><a id="export">Export JSON</a></div>
-      <ol id="results" class="results"></ol>
-      <nav id="pages" class="pages" aria-label="Search pages"></nav>
-      <button id="refine" class="secondary" hidden>Refine with my feedback</button>
+
+      <div class="results-layout">
+        <section id="results-panel" class="results-column" role="tabpanel" aria-labelledby="source-all" aria-busy="false">
+          <h1 id="results-title" class="results-title" tabindex="-1">Results</h1>
+          <p id="status" class="status" role="status"></p>
+          <div id="warnings" class="warnings" role="status"></div>
+          <div id="suggestions" class="suggestions"></div>
+          <ol id="results" class="results"></ol>
+          <nav id="pages" class="pages" aria-label="Search pages" hidden></nav>
+        </section>
+
+        <dialog id="preview" class="preview" aria-labelledby="preview-title">
+          <div class="preview-top">
+            <span class="eyebrow">Source preview</span>
+            <button class="icon-button preview-close" type="button" aria-label="Close preview" autofocus>×</button>
+          </div>
+          <div class="preview-inner">
+            <div id="preview-source" class="preview-source"></div>
+            <h2 id="preview-title">Document</h2>
+            <p id="preview-status" class="status" role="status"></p>
+            <div id="preview-body"></div>
+          </div>
+          <div id="preview-footer" class="preview-footer"></div>
+        </dialog>
+      </div>
     </section>
   </main>
-  <footer class="footer"><div class="frame">TechSearch <span>·</span> Documentation and posts retain their source attribution.</div></footer>
-  <dialog id="viewer" aria-labelledby="viewer-title">
-    <div class="dialog-head"><h2 id="viewer-title">Document</h2><form method="dialog"><button class="secondary" aria-label="Close document">Close</button></form></div>
-    <div id="viewer-body" aria-live="polite"></div>
-  </dialog>
+  <footer class="page-footer"><div class="frame"><strong>TechSearch</strong><span>Local index of MDN and Stack Overflow</span></div></footer>
 </body>
 </html>

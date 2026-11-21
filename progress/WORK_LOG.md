@@ -1,5 +1,14 @@
 # Work log
 
+## Search and IR Lab redesign on 2026-11-22
+
+- Implemented the reference palette, compact controls, centered search home, sticky results search, and source tabs with a separate topic filter. Search history preserves the query, source, topic and page, including on reload and when returning from IR Lab.
+- Replaced the evidence overlays with a shared source preview. It shows a desktop sidebar or a native mobile modal, matches the source evidence ordinal, preserves code as text and offers navigation for real sections. Result rows disclose attribution and feedback on demand. Accepted-answer status comes from the existing document endpoint.
+- Applied the same design tokens to IR Lab and added readable report tables alongside the existing charts, diagnostics, comparison controls and exports. Updated the browser verification script for the new controls. Backend code, artifacts and API contracts were unchanged.
+- Ran `python -m pytest tests/browser tests/integration -q --tb=short` on Windows. All 23 tests passed, including six Chromium checks covering history, filtering, feedback, preview, request states, and responsive layout. The broader suite reported 39 passes and five failures in unchanged collector tests. Those tests expect archive, batching and retry behavior absent from the currently restored collector scripts.
+- Ran Chromium 159 against the saved dense release `250a15ecd349951d6c69364c` using real CORS results. Verified desktop and mobile previews, the Stack Overflow filter, the Lab comparison, compression charts, and no horizontal overflow or uncaught JavaScript errors. Evidence is in `artifacts/execution/ui-redesign/live-browser.json` and the seven PNG screenshots in `artifacts/execution/ui-redesign/screenshots/`.
+- Started the redesigned app on `127.0.0.1:8000` with the existing active dense release. Readiness and the redesigned home both returned successfully.
+
 ## Windows execution on 2026-11-22
 
 - Installed project-local Python 3.12.16, the declared dependencies, CPU PyTorch, and Chromium. Bootstrap and its dependency check passed. The log is at `artifacts/execution/bootstrap-windows.log`.
@@ -41,6 +50,16 @@
 - `benchmark --split dev --ablations` completed the lexical intermediate release, all 300 groups / three repeats. Each lexical method: 299 successful groups, one unavailable broad prefix (`Abort*` exceeds the 20-term budget). Dense/hybrid were explicitly unavailable; Auto disclosed lexical fallback. First-pass BM25 p50/p95 77.298/657.127 ms. These timings were measured while CPU encoding ran concurrently, with shared OS cache and no CPU isolation. Full dense measurements are still pending.
 - Saved evaluation blockers now appear as blocked in API/Lab rather than misleading “not run” states, without relevance aggregates. Added a no-judgments regression. Ablation runs now also export a documented baseline subset of the same actual observations; no duplicate execution or invented timings. Fixed its missing-timing handling for unavailable methods; affected integration suite passed all 15 tests.
 
+
+## Frontend UI redesign (2026-11-22)
+
+- Wrote new CSS design tokens in `frontend/assets/css/site.css`: near-white background (`#f7f6f1`), graphite text (`#23292e`), vermilion accents (`#b23a48`), blue result links (`#0b5ed7`), compact controls, subtle borders, restrained rounding; reused Inter/system sans-serif and monospace for code.
+- Rewrote `frontend/index.html` with semantic HTML: empty state (centered TechSearch identity, search box, description, example chips, nav) and results state (sticky header, source tabs All/MDN/Stack Overflow, separate topic filter, query+filters+pagination preserved in URL). Removed oversized headline from results state.
+- Rewrote `frontend/assets/js/shared.js`: reusable components (result item, preview panel/drawer, API helper, attribution, quieter feedback controls) plus safe text rendering via `textContent`/DOM APIs (no `innerHTML`).
+- Rewrote `frontend/assets/js/search.js`: empty-to-results transition, `/` keyboard shortcut, source tabs as source filter (no duplicate source dropdown), topic filter, pagination via `GET /api/v1/search/{sid}`, Preview panel/drawer with focus management and Escape to close, feedback judged via POST `/api/v1/feedback`, export per search ID.
+- Applied shared design system to `frontend/lab.html` (already used site.css tokens); preserved all algorithm controls, comparisons, charts, exports, experiments via lab.js.
+- Verified: browser suite `tests/browser/test_frontend.py` passes 3/3 (home→results transition, search submission/keyboard shortcuts, source/topic filters/pagination, preview open/close & Escape, mobile focus, attribution/feedback, Search/Lab nav, loading/empty/error states, responsive layout). Captured screenshots to `artifacts/execution/screenshots/`.
+- Preserved backend search behavior, indexes, data, API contracts, and features; no backend changes.
 
 ## Repository intake and source implementation
 

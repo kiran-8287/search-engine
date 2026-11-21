@@ -1,33 +1,44 @@
-import { $, addOptions, api, el, resultItem, showJson, titleCase } from "./shared.js";
+import { $, SEARCH_LOCATION_KEY, addOptions, api, createPreview, el, resultItem, showJson, titleCase } from "./shared.js";
 
 const modes = [["keyword", "Keyword"], ["boolean", "Boolean"], ["phrase", "Phrase"], ["prefix", "Prefix"],
   ["fuzzy", "Fuzzy"], ["semantic", "Semantic"], ["hybrid", "Hybrid"], ["field", "Field-specific"]];
 const form = $("#compare");
 const status = $("#status");
 const panels = [];
+const preview = createPreview();
 let comparison;
 let reportWork;
 
-function fields(name, defaultMode) {
+try {
+  const lastSearch = sessionStorage.getItem(SEARCH_LOCATION_KEY);
+  if (lastSearch?.startsWith("/?")) $("#return-search").href = lastSearch;
+} catch {
+  // The default Search link works without browser storage.
+}
+
+function fields(name, defaultMode, prefix) {
   const container = el("fieldset");
   const controls = el("div", null, "settings");
   const checks = el("div", null, "checks");
   const inputs = {};
-  function select(key, label, options, value) {
-    const wrapper = el("label", label, "control");
-    const input = addOptions(el("select"), options);
-    input.value = value;
-    wrapper.append(input);
+  function addControl(key, text, input) {
+    const wrapper = el("div", null, "control");
+    const label = el("label", text);
+    input.id = prefix + "-" + key;
+    label.htmlFor = input.id;
+    wrapper.append(label, input);
     controls.append(wrapper);
     inputs[key] = input;
   }
+  function select(key, label, options, value) {
+    const input = addOptions(el("select"), options);
+    input.value = value;
+    addControl(key, label, input);
+  }
   function numeric(key, label, min, max, step, placeholder) {
-    const wrapper = el("label", label, "control");
     const input = el("input");
     Object.assign(input, { type: "number", min, max, step, placeholder });
-    wrapper.append(input);
-    controls.append(wrapper);
-    inputs[key] = input;
+    addControl(key, label, input);
   }
   function checkbox(key, label) {
     const wrapper = el("label");
@@ -54,7 +65,7 @@ function fields(name, defaultMode) {
   return inputs;
 }
 
-panels.push(fields("Method A", "keyword"), fields("Method B", "hybrid"));
+panels.push(fields("Method A", "keyword", "method-a"), fields("Method B", "hybrid", "method-b"));
 api("/filters").then(({ topic }) => {
   panels.forEach((panel) => addOptions(panel.topic, topic.map((value) => [value, titleCase(value)])));
 }).catch(() => {});
@@ -75,14 +86,14 @@ function panel(name, data) {
     cell.append(el("p", data.error));
     return cell;
   }
-  cell.append(el("p", data.total + " ranked results · " + Math.round(data.timing_ms) + " ms", "meta"));
+  cell.append(el("p", data.total + " ranked results · " + Math.round(data.timing_ms) + " ms", "rank-meta technical"));
   if (!data.total) cell.append(el("p", "No matches."));
-  for (const warning of data.warnings) cell.append(el("p", warning));
+  for (const warning of data.warnings) cell.append(el("p", warning, "callout"));
   const exportLink = el("a", "Export ranking");
   exportLink.href = "/api/v1/exports/search/" + data.search_id;
   cell.append(exportLink, showJson("Execution trace", data.trace));
   const list = el("ol", null, "results");
-  list.append(...data.results.map((hit) => resultItem(hit, { lab: true })));
+  list.append(...data.results.map((hit) => resultItem(hit, { lab: true, preview })));
   cell.append(list);
   return cell;
 }
@@ -92,6 +103,9 @@ form.addEventListener("submit", async (event) => {
   comparison?.abort();
   comparison = new AbortController();
   const { signal } = comparison;
+  preview.close({ restoreFocus: false });
+  $("#rankings").setAttribute("aria-busy", "true");
+  status.classList.remove("error");
   status.textContent = "Comparing methods…";
   try {
     const result = await api("/compare", { body: { left: options(panels[0]), right: options(panels[1]) }, signal });
@@ -102,7 +116,10 @@ form.addEventListener("submit", async (event) => {
     if (!signal.aborted) {
       $("#rankings").replaceChildren();
       status.textContent = error.message;
+      status.classList.add("error");
     }
+  } finally {
+    if (!signal.aborted) $("#rankings").setAttribute("aria-busy", "false");
   }
 });
 
@@ -116,12 +133,38 @@ function bytes(value) {
   return new Intl.NumberFormat().format(value) + " bytes";
 }
 
+function reportTable(caption, headers, rows) {
+  const frame = el("div", null, "table-scroll");
+  const table = el("table");
+  const label = el("caption", caption, "sr-only");
+  const thead = el("thead");
+  const headings = el("tr");
+  for (const text of headers) {
+    const header = el("th", text);
+    header.scope = "col";
+    headings.append(header);
+  }
+  thead.append(headings);
+  const tbody = el("tbody");
+  for (const row of rows) {
+    const tr = el("tr");
+    row.forEach((value, index) => tr.append(el("td", value ?? "Unavailable", index ? "technical" : "")));
+    tbody.append(tr);
+  }
+  table.append(label, thead, tbody);
+  frame.append(table);
+  frame.tabIndex = 0;
+  frame.setAttribute("role", "region");
+  frame.setAttribute("aria-label", caption);
+  return frame;
+}
+
 function chart(codecs) {
   const section = el("div", null, "chart");
   section.append(el("p", "Complete postings artifact size"));
   const max = Math.max(1, ...Object.values(codecs).map((item) => item.artifact_bytes));
   for (const [name, stats] of Object.entries(codecs)) {
-    const row = el("div");
+    const row = el("div", null, "chart-row");
     const bar = el("progress");
     bar.max = max;
     bar.value = stats.artifact_bytes;
@@ -130,6 +173,43 @@ function chart(codecs) {
     section.append(row);
   }
   return section;
+}
+
+function reportSummary(name, report, display) {
+  if (name === "index") {
+    const stats = report.lexical;
+    const rows = [["Release", report.release_id], ["Parents", stats.parents.toLocaleString()],
+      ["Vocabulary", stats.vocabulary.toLocaleString()], ["Postings", stats.postings.toLocaleString()],
+      ["Artifacts", bytes(report.artifact_bytes)]];
+    if (report.dense) rows.push(["Dense passages", report.dense.passages.toLocaleString()]);
+    display.append(reportTable("Index summary", ["Measure", "Value"], rows));
+  }
+  if (report.codecs) {
+    const rows = Object.entries(report.codecs).map(([codec, stats]) =>
+      [codec, bytes(stats.payload_bytes), bytes(stats.metadata_bytes), bytes(stats.artifact_bytes)]);
+    display.append(chart(report.codecs), reportTable("Compression sizes", ["Codec", "Payload", "Metadata", "Total"], rows));
+  }
+  if (report.retained_edges !== undefined) {
+    display.append(reportTable("Graph summary", ["Measure", "Value"], [
+      ["MDN pages", report.parents], ["Retained edges", report.retained_edges],
+      ["Isolates", report.isolates], ["Dangling nodes", report.dangling],
+    ]));
+  }
+  if (name === "taat-daat" && report.rows?.length) {
+    const rows = report.rows.map((row) => [row.query, row.condition, row.strategy.toUpperCase(), row.p50_ms?.toFixed(2), row.p95_ms?.toFixed(2)]);
+    display.append(reportTable("Execution timings", ["Query", "Condition", "Strategy", "p50 (ms)", "p95 (ms)"], rows));
+  }
+  if (report.outcomes) {
+    const rows = Object.entries(report.outcomes).map(([method, outcome]) => [method, outcome.ok ?? 0, outcome.degraded ?? 0, outcome.unavailable ?? 0]);
+    display.append(reportTable("Benchmark outcomes", ["Method", "Completed", "Degraded", "Unavailable"], rows));
+  }
+  if (report.aggregates) {
+    const measures = [...new Set(Object.values(report.aggregates).flatMap(Object.keys))];
+    const rows = Object.entries(report.aggregates).map(([method, metrics]) => [
+      method, ...measures.map((measure) => metrics[measure]?.toFixed(3)),
+    ]);
+    display.append(el("p", "AI-judged relevance"), reportTable("Relevance metrics", ["Method", ...measures], rows));
+  }
 }
 
 async function selectReport(name, label) {
@@ -153,17 +233,7 @@ async function selectReport(name, label) {
     }
     if (value.status === "build-only") display.append(el("p", "Sizes are available from the index build. The decode comparison has not been run."));
     const report = name === "index" ? value : value.report;
-    if (report.codecs) display.append(chart(report.codecs));
-    if (name === "index") display.append(el("p", report.lexical.parents + " parents · " + report.lexical.vocabulary + " terms · " + bytes(report.artifact_bytes)));
-    if (report.retained_edges !== undefined) display.append(el("p", report.parents + " MDN pages · " + report.retained_edges + " edges · " + report.isolates + " isolates"));
-    if (report.aggregates) {
-      const list = el("ul");
-      for (const [method, metrics] of Object.entries(report.aggregates)) {
-        list.append(el("li", method + " · " + Object.entries(metrics).map(([key, val]) =>
-          key + " " + (typeof val === "number" ? val.toFixed(3) : "unavailable")).join(" · ")));
-      }
-      display.append(el("p", "AI-judged relevance"), list);
-    }
+    reportSummary(name, report, display);
     display.append(showJson("Report details", report));
     if (name !== "index") {
       const exportLink = el("a", "Export JSON");
@@ -176,7 +246,7 @@ async function selectReport(name, label) {
 }
 
 for (const [name, label] of reports) {
-  const button = el("button", label, "secondary");
+  const button = el("button", label, "button secondary");
   button.dataset.name = name;
   button.setAttribute("aria-pressed", "false");
   button.addEventListener("click", () => selectReport(name, label));
