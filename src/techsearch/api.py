@@ -23,7 +23,7 @@ Mode = Literal["auto", "keyword", "boolean", "phrase", "prefix", "fuzzy", "seman
 Source = Literal["mdn", "stackoverflow"]
 Ranker = Literal["bm25", "tfidf", "likelihood"]
 SESSION = re.compile("[a-f0-9]{32}")
-REPORTS = {"compression", "taat-daat", "graph", "latent", "benchmark-dev", "benchmark-test",
+REPORTS = {"compression", "taat-daat", "graph", "latent", "retrieval", "benchmark-dev", "benchmark-test",
            "evaluation-dev", "evaluation-test", "ablations-dev", "ablations-test",
            "evaluation-ablations-dev", "evaluation-ablations-test"}
 
@@ -192,7 +192,8 @@ def create_app(settings=None):
             return {"name": name, "status": "available", "release_id": active.release.id, "report": active.release.info["graph"]}
         path = settings.path("artifacts") / "reports" / active.release.id / f"{name}.json"
         if path.is_file():
-            return {"status": "available", **read_json(path)}
+            saved = read_json(path)
+            return {"status": saved["report"].get("status", "available"), **saved}
         if name == "compression":
             return {"name": name, "status": "build-only", "release_id": active.release.id,
                     "report": {"codecs": active.release.info["lexical"]["compression"]}}

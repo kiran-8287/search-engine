@@ -13,6 +13,16 @@ from techsearch.service import SearchService
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def pytest_addoption(parser):
+    parser.addoption("--browser-executable", help="Use an installed browser compatible with the host OS")
+
+
+@pytest.fixture(scope="session")
+def browser_type_launch_args(browser_type_launch_args, pytestconfig):
+    executable = pytestconfig.getoption("--browser-executable")
+    return {**browser_type_launch_args, **({"executable_path": executable} if executable else {})}
+
+
 @pytest.fixture()
 def settings(tmp_path, monkeypatch):
     for name in ("config",):

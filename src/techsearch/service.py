@@ -251,7 +251,8 @@ class SearchService:
                         "dense_passage": passage}
         return {"id": parent["id"], "release_id": self.release.id, "rank": rank, "title": parent["title"], "source": parent["source"], "topic": parent["topic"],
                 "url": parent["url"], "tags": parent["tags"], "author": info.get("author"), "author_url": info.get("author_url"),
-                "license": info.get("content_license"), "score": score, "explanation": details, "snippet": parts, "evidence": evidence}
+                "license": info.get("content_license"), "score": score,
+                "explanation": [list(part) for part in details], "snippet": parts, "evidence": evidence}
 
     def document(self, stable):
         return document_detail(self.documents, self.release.id, stable)

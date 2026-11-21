@@ -8,7 +8,7 @@ from techsearch.api import create_app
 from techsearch.corpus import alias_key, url
 from techsearch.feedback import Runtime, SnapshotMissing, search_id
 from techsearch.io import atomic_file, read_jsonl
-from techsearch.pipeline import ReleaseUnavailable, open_release, preprocess
+from techsearch.pipeline import ReleaseUnavailable, open_release, preprocess, validate_postings
 from techsearch.repository import Documents
 
 PROMISE = "mdn:web/javascript/fixture-promise/index.md"
@@ -52,6 +52,38 @@ def test_atomic_failure_keeps_existing_file(tmp_path):
         raise RuntimeError("intentional")
     assert path.read_bytes() == b"intact"
     assert sorted(tmp_path.iterdir()) == [path]
+
+
+def test_interrupted_staging_handles_transient_nfs_cleanup(tmp_path, monkeypatch):
+    import errno
+    import tempfile
+
+    from techsearch.pipeline import staging
+
+    original = tempfile.TemporaryDirectory.cleanup
+    attempts = []
+
+    def busy_once(directory):
+        attempts.append(directory.name)
+        if len(attempts) == 1:
+            raise OSError(errno.ENOTEMPTY, "transient NFS deletion")
+        return original(directory)
+
+    monkeypatch.setattr(tempfile.TemporaryDirectory, "cleanup", busy_once)
+    with pytest.raises(KeyboardInterrupt), staging(tmp_path) as folder:
+        (folder / "incomplete.bin").write_bytes(b"partial")
+        raise KeyboardInterrupt
+    assert len(attempts) == 2 and not list(tmp_path.iterdir())
+
+
+def test_missing_release_keeps_ui_alive_and_returns_actionable_error(settings):
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/").status_code == 200
+        assert client.get("/lab").status_code == 200
+        assert client.get("/api/v1/health").status_code == 200
+        readiness = client.get("/api/v1/readiness")
+        assert readiness.status_code == 503 and "No active release" in readiness.json()["detail"]
+        assert client.post("/api/v1/search", json={"query": "CSS"}).status_code == 503
 
 
 def test_search_modes_and_constraints(service):
@@ -109,3 +141,120 @@ def test_api_pagination_validation_and_export(settings, release):
         assert client.get("/api/v1/reports/taat-daat").json()["status"] == "not-run"
     with TestClient(create_app(settings)) as private_client:
         assert private_client.get("/api/v1/search/" + found["search_id"]).status_code == 404
+
+
+def test_deep_validation_checks_forward_against_source(release):
+    from techsearch.indexing import STATS
+
+    path = release.path / "forward-stats.bin"
+    data = bytearray(path.read_bytes())
+    row = list(STATS.unpack_from(data))
+    row[0] += 1
+    STATS.pack_into(data, 0, *row)
+    path.write_bytes(data)
+    with pytest.raises(ReleaseUnavailable, match="Forward statistics"):
+        validate_postings(release.path)
+
+
+def test_deep_validation_checks_postings_against_source(release):
+    from techsearch.repository import write_indexed_jsonl
+
+    docs = list(Documents(release.path))
+    docs[0]["segments"][-1]["text"] += " uniquevalidationtoken"
+    write_indexed_jsonl(release.path / "documents.jsonl", release.path / "documents.offsets", docs)
+    with pytest.raises(ReleaseUnavailable, match="Forward terms"):
+        validate_postings(release.path)
+
+
+def test_deep_validation_rejects_identical_bad_offsets_in_all_codecs(release):
+    from contextlib import ExitStack
+
+    from techsearch.compression import CODECS, pack_postings
+    from techsearch.indexing import Index
+    from techsearch.io import dumps
+
+    for codec in CODECS:
+        with ExitStack() as stack:
+            index = Index(release.path, stack, codec)
+            rows = [(term, *index.posting(term)) for term in index.files.sorted_terms]
+        term, _df, _cf, postings = rows[0]
+        positions = next(iter(next(iter(postings.values())).values()))
+        segment, position, start, end, original = positions[0]
+        positions[0] = (segment, position, start + 1, end + 1, original)
+        with (release.path / f"postings-{codec}.bin").open("wb") as payload, (
+                release.path / f"lexicon-{codec}.jsonl").open("w", encoding="utf-8") as lexicon:
+            for term, df, cf, postings in rows:
+                blob, bits = pack_postings(postings, codec)
+                lexicon.write(dumps([term, df, cf, payload.tell(), len(blob), bits]) + "\n")
+                payload.write(blob)
+    with pytest.raises(ReleaseUnavailable, match="Postings disagree with canonical positions"):
+        validate_postings(release.path)
+
+
+def test_retrieval_experiment_keeps_qrels_separate(service):
+    import math
+
+    from techsearch.experiments import retrieval_report
+
+    report = retrieval_report(service, ["concurrent tasks"])
+    methods = report["rows"][0]["methods"]
+    assert methods["rocchio_probe"]["probe_document"] == methods["bm25"]["hits"][0]["id"]
+    assert methods["rocchio_probe"]["expansion"]
+    assert all(math.isfinite(hit["score"]) for method in methods.values() for hit in method["hits"])
+    assert not (service.settings.path("data") / "evaluation").exists()
+
+
+def test_unjudged_evaluation_is_saved_and_shown_as_blocked(service):
+    from techsearch.evaluation import evaluate
+    from techsearch.io import write_json
+
+    run = {"split": "dev", "protocol": "fixture-protocol", "runs": [
+        {"id": "fixture-group", "query": "Promise.all", "class": "exact-api", "methods": {
+            "bm25": {"status": "ok", "ids": [PROMISE]}}}]}
+    path = service.settings.path("artifacts") / "runs" / service.release.id / "benchmark-dev.json"
+    write_json(path, run)
+    result = evaluate(service.settings, service, "dev")
+    assert result["status"] == "blocked" and result["pending"] == 1 and result["labeled"] == 0
+    with TestClient(create_app(service.settings)) as client:
+        report = client.get("/api/v1/reports/evaluation-dev").json()
+        assert report["status"] == "blocked"
+        assert "aggregates" not in report["report"]
+
+
+def test_ablation_export_preserves_actual_baseline_observations(service):
+    from techsearch.evaluation import benchmark
+    from techsearch.io import read_json, write_json
+
+    write_json(service.settings.path("data") / "evaluation/frozen.json", {
+        "group_fingerprint": "fixture-protocol", "groups": [
+            {"split": "dev", "id": "fixture-group", "query": "concurrent tasks", "class": "natural-language"}]})
+    benchmark(service.settings, service, "dev", ablations=True)
+    directory = service.settings.path("artifacts") / "runs" / service.release.id
+    full, baseline = [read_json(directory / name) for name in ("ablations-dev.json", "benchmark-dev.json")]
+    assert len(full["methods"]) == 8 and len(baseline["methods"]) == 4
+    assert baseline["measurement_source_run_id"]
+    for method in baseline["methods"]:
+        assert baseline["runs"][0]["methods"][method] == full["runs"][0]["methods"][method]
+        assert baseline["timing_ms"].get(method) == full["timing_ms"].get(method)
+
+
+def test_demo_bundle_keeps_saved_reports_and_portable_paths(settings, release, tmp_path):
+    import shutil
+    from pathlib import Path
+    from zipfile import ZipFile
+
+    import yaml
+
+    from techsearch.experiments import save_report
+    from techsearch.packaging import package_demo
+
+    root = Path(__file__).resolve().parents[2]
+    for filename in (".env.example", ".gitignore", "README.md", "pyproject.toml", "collect_mdn.py", "collect_stackoverflow.py"):
+        shutil.copy2(root / filename, settings.root / filename)
+    save_report(settings, release, "retrieval", {"rows": []})
+    bundle = package_demo(settings, release, tmp_path / "demo.zip")
+    with ZipFile(bundle["bundle"]) as archive:
+        assert f"artifacts/reports/{release.id}/retrieval.json" in archive.namelist()
+        assert ".env" not in archive.namelist()
+        paths = yaml.safe_load(archive.read("config/default.yaml"))["paths"]
+        assert paths == {"data": "data", "artifacts": "artifacts", "runtime": "data/runtime", "frontend": "frontend"}

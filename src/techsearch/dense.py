@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import sys
 import tempfile
 from itertools import groupby
 from time import perf_counter
@@ -120,7 +121,8 @@ def chunk_rows(documents, tokenizer, limit, overlap):
 def build_dense(directory, settings, manifest):
     started = perf_counter()
     model = load_encoder(settings, manifest, verify=True)
-    dimension = model.get_sentence_embedding_dimension()
+    dimension_method = getattr(model, "get_embedding_dimension", None) or model.get_sentence_embedding_dimension
+    dimension = dimension_method()
     limits = settings.default["resources"]
     revision = digest([manifest, settings.dense, CHUNK_VERSION, ANALYZER_VERSION])
     cache_home = model_path(settings) / "embeddings" / revision
@@ -168,6 +170,8 @@ def build_dense(directory, settings, manifest):
                 yield {"row": count, "parent": parent, "answer_id": answer, "spans": spans}
                 count = index
             batch.clear()
+            if count and count % (batch_size * 32) == 0:
+                print(f"Dense build: {count:,} passages written; resumable vectors cached.", file=sys.stderr, flush=True)
         def passages():
             rows = chunk_rows(documents, model.tokenizer, settings.dense["chunk_tokens"], settings.dense["overlap_tokens"])
             for parent, answer, spans, text in rows:
@@ -183,7 +187,8 @@ def build_dense(directory, settings, manifest):
         with atomic_file(directory / "passage-parents.npy") as output:
             np.save(output, np.asarray(parents, dtype="<u4"), allow_pickle=False)
     return {"passages": count, "dimension": dimension, "model": manifest, "fingerprint": revision,
-            "bytes": count * dimension * 4, "seconds": perf_counter() - started}
+            "bytes": (directory / "vectors.npy").stat().st_size,
+            "vector_payload_bytes": count * dimension * 4, "seconds": perf_counter() - started}
 
 
 class Dense:

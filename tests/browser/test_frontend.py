@@ -37,7 +37,7 @@ def base(settings, release):
 def test_search_keyboard_pagination_evidence_and_safe_html(page, base):
     page.goto(base)
     page.keyboard.press("/")
-    field = page.get_by_role("searchbox").or_(page.get_by_role("textbox", name="Search the corpus"))
+    field = page.get_by_label("Search the corpus", exact=True)
     expect(field).to_be_focused()
     field.fill("fixturefolio")
     field.press("Enter")
@@ -47,6 +47,7 @@ def test_search_keyboard_pagination_evidence_and_safe_html(page, base):
     expect(page.locator("#results > li")).to_have_count(2)
     field.fill("code:===")
     field.press("Enter")
+    expect(page.locator("#results > li")).to_have_count(1)
     page.get_by_role("button", name="View evidence").click()
     dialog = page.get_by_role("dialog")
     expect(dialog).to_be_visible()

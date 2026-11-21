@@ -2,6 +2,7 @@ import re
 import shutil
 
 import numpy as np
+import pytest
 
 from techsearch import dense
 from techsearch.repository import CORPUS_FILES, Documents, Passages
@@ -23,6 +24,12 @@ class FixtureEncoder:
         return np.tile(np.array([0, 0, 1], dtype=np.float32), (len(texts), 1))
 
 
+def test_missing_cached_model_is_explicit(settings):
+    manifest = {"repo": settings.dense["model"], "revision": "0" * 40, "files": {"config.json": "missing"}}
+    with pytest.raises(dense.DenseUnavailable, match="Cached model file missing"):
+        dense.load_encoder(settings, manifest, verify=True)
+
+
 def test_dense_storage_alignment_and_cache(tmp_path, settings, release, monkeypatch):
     stage = tmp_path / "dense-fixture"
     stage.mkdir()
@@ -32,6 +39,8 @@ def test_dense_storage_alignment_and_cache(tmp_path, settings, release, monkeypa
     settings.dense.update(chunk_tokens=9, overlap_tokens=2)
     info = dense.build_dense(stage, settings, {"repo": "fixture", "revision": "0" * 40, "files": {}})
     assert info["passages"] > len(Documents(stage).parents)
+    assert info["bytes"] == (stage / "vectors.npy").stat().st_size
+    assert info["bytes"] > info["vector_payload_bytes"]
     repo = Passages(stage)
     repo.validate(Documents(stage))
     assert tuple(repo.vectors[0]) == (0, 0, 1)

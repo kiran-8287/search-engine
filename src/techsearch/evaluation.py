@@ -7,6 +7,7 @@ import platform
 import random
 import re
 import statistics
+import sys
 import time
 from collections import Counter, defaultdict
 from time import perf_counter
@@ -96,7 +97,7 @@ def benchmark(settings, service, split, *, ablations=False):
     if repeats < 1:
         raise ValueError("Evaluation requires at least one latency repeat.")
     results = defaultdict(Counter)
-    for group in groups:
+    for ordinal, group in enumerate(groups, 1):
         order = list(methods)
         randomizer.shuffle(order)
         entries = {}
@@ -123,6 +124,8 @@ def benchmark(settings, service, split, *, ablations=False):
                 entries[method] = {"status": "unavailable", "reason": str(error)}
                 results[method]["unavailable"] += 1
         runs.append({**group, "methods": entries})
+        if ordinal % 25 == 0:
+            print(f"Benchmark {split}: {ordinal}/{len(groups)} groups complete.", file=sys.stderr, flush=True)
     summary = {
         "release_id": service.release.id, "created_at": now(), "split": split,
         "protocol": protocol["group_fingerprint"], "router": ROUTER_VERSION,
@@ -140,14 +143,33 @@ def benchmark(settings, service, split, *, ablations=False):
                                for condition, values in conditions.items()} for method, conditions in times.items()},
         "runs": runs,
     }
-    run_key = digest(summary)[:16]
     name = ("ablations-" if ablations else "benchmark-") + split
+    output = save_benchmark(settings, service, name, summary)
+    if ablations:
+        # The ablation run already measures all four fixed baseline methods.
+        # Export their actual observations as a documented subset, so normal
+        # benchmark/evaluation views can use them without rerunning queries.
+        baseline_methods = list(DESIGNS)[:4]
+        baseline = {**summary,
+                    "measurement_source_run_id": output["report"]["run_id"],
+                    "latency_note": summary["latency_note"] + " Baseline subset of the same eight-method ablation execution; no second execution.",
+                    "methods": {key: summary["methods"][key] for key in baseline_methods},
+                    "outcomes": {key: summary["outcomes"][key] for key in baseline_methods},
+                    "timing_ms": {key: value for key, value in summary["timing_ms"].items() if key in baseline_methods},
+                    "runs": [{**group, "methods": {key: group["methods"][key] for key in baseline_methods}}
+                             for group in summary["runs"]]}
+        save_benchmark(settings, service, "benchmark-" + split, baseline)
+    return output
+
+
+def save_benchmark(settings, service, name, summary):
+    run_key = digest(summary)[:16]
     directory = settings.path("artifacts") / "runs" / service.release.id
     write_json(directory / f"{name}-{run_key}.json", summary)
     write_json(directory / f"{name}.json", summary)
     write_csv(directory / f"{name}-{run_key}.csv", ("group", "class", "method", "rank", "document"),
               ((group["id"], group["class"], method, rank, doc)
-               for group in runs for method, entry in group["methods"].items()
+               for group in summary["runs"] for method, entry in group["methods"].items()
                for rank, doc in enumerate(entry.get("ids", []), start=1)))
     return save_report(settings, service.release, name, {k: v for k, v in summary.items() if k != "runs"} | {"run_id": run_key})
 
@@ -235,6 +257,7 @@ def annotation_key(release, protocol, config, group, stable):
 
 def evaluate(settings, service, split, *, annotate=False, limit=50, ablations=False):
     name = ("ablations-" if ablations else "benchmark-") + split
+    report_name = f"evaluation-{'ablations-' if ablations else ''}{split}"
     run_path = settings.path("artifacts") / "runs" / service.release.id / f"{name}.json"
     if not run_path.is_file():
         raise ValueError(f"Run {name} on this release first.")
@@ -273,15 +296,21 @@ def evaluate(settings, service, split, *, annotate=False, limit=50, ablations=Fa
     write_json(status_file, {"pending": pending, "labeled": sum(map(len, qrels.values())), "new_judgments": spent,
                              "label_type": "AI-judged", "split": split, "updated": now()})
     if pending:
-        return {"status": "blocked" if not annotate else "partial", "pending": pending, "new_judgments": spent,
-                "reason": "Pool incomplete. Explicit annotation is required before publishing metrics."}
+        reason = "Pool incomplete. Explicit annotation is required before publishing metrics."
+        if not os.getenv("TECHSEARCH_ANNOTATION_API_KEY") or not config["model"]:
+            reason = "Relevance evaluation is blocked: annotation credentials/model are missing. No relevance metrics are available."
+        result = {"status": "blocked" if not annotate else "partial", "pending": pending,
+                  "labeled": sum(map(len, qrels.values())), "new_judgments": spent, "reason": reason}
+        save_report(settings, service.release, report_name, {**result, "split": split, "protocol": run["protocol"]})
+        return result
     if not qrels:
-        return {"status": "blocked", "reason": "No pooled candidates available."}
+        result = {"status": "blocked", "reason": "No pooled candidates available."}
+        save_report(settings, service.release, report_name, result)
+        return result
     output = metrics(run, qrels, settings.evaluation["recall_depth"])
     output.update(label_type="AI-judged", split=split, protocol=run["protocol"], annotation_model=config["model"],
                   candidates=sum(map(len, qrels.values())), disagreement_audit=audit,
                   audit_disagreements=sum(record["attempts"][0]["grade"] != record["attempts"][1]["grade"] for record in audit))
-    report_name = f"evaluation-{'ablations-' if ablations else ''}{split}"
     reports = settings.path("artifacts") / "reports" / service.release.id
     write_csv(reports / f"{report_name}.csv", ("group", "method", "metric", "value"),
               ((group, method, metric, value) for group, methods in output["per_group"].items()

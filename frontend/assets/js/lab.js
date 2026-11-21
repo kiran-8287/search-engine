@@ -107,9 +107,10 @@ form.addEventListener("submit", async (event) => {
 });
 
 const reports = [["index", "Index"], ["compression", "Compression"], ["taat-daat", "TAAT / DAAT"],
-  ["graph", "Graph"], ["latent", "LSI / K-means"], ["benchmark-dev", "Dev benchmark"],
+  ["graph", "Graph"], ["retrieval", "Rankers / feedback"], ["latent", "LSI / K-means"], ["benchmark-dev", "Dev benchmark"],
   ["evaluation-dev", "Dev metrics"], ["benchmark-test", "Test benchmark"], ["evaluation-test", "Test metrics"],
-  ["ablations-dev", "Dev ablations"], ["ablations-test", "Test ablations"]];
+  ["ablations-dev", "Dev ablations"], ["ablations-test", "Test ablations"],
+  ["evaluation-ablations-dev", "Dev ablation metrics"], ["evaluation-ablations-test", "Test ablation metrics"]];
 
 function bytes(value) {
   return new Intl.NumberFormat().format(value) + " bytes";
@@ -144,6 +145,10 @@ async function selectReport(name, label) {
     display.replaceChildren(el("h3", label));
     if (value.status === "not-run") {
       display.append(el("p", "This experiment has not been run for the active release."));
+      return;
+    }
+    if (value.status === "blocked" || value.status === "partial") {
+      display.append(el("p", value.report.reason), showJson("Evaluation status", value.report));
       return;
     }
     if (value.status === "build-only") display.append(el("p", "Sizes are available from the index build. The decode comparison has not been run."));

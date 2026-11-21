@@ -90,7 +90,7 @@ def parser():
     cmd.add_argument("--strategy", choices=("taat", "daat"), default="taat")
     cmd.add_argument("--depth", type=int)
     cmd = commands.add_parser("experiments", help="Run measured offline retrieval experiments")
-    cmd.add_argument("--suite", choices=("compression", "taat-daat", "latent", "all"), default="all")
+    cmd.add_argument("--suite", choices=("compression", "taat-daat", "retrieval", "latent", "all"), default="all")
     cmd.add_argument("--query", action="append", help="Repeat for an explicit workload")
     cmd.add_argument("--repeats", type=int, default=3)
     cmd.add_argument("--sample", type=int, default=2500, help="Maximum sample for LSI and K-means")
@@ -132,6 +132,9 @@ def as_report(service, args):
         latent = experiments.latent_report(service, args.sample, args.components, args.clusters,
                                            settings.default["resources"]["seed"], workload)
         output["latent"] = experiments.save_report(settings, release, "latent", latent)
+    if args.suite in {"all", "retrieval"}:
+        output["retrieval"] = experiments.save_report(settings, release, "retrieval",
+                                                       experiments.retrieval_report(service, workload))
     return {name: {"release_id": item["release_id"], "created_at": item["created_at"]} for name, item in output.items()}
 
 

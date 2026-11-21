@@ -36,10 +36,9 @@ def package_demo(settings, release, output=None):
         for filename in model["files"]:
             entries[f"{prefix}/{filename}"] = model_path(settings) / model["revision"] / filename
     reports = settings.path("artifacts") / "reports" / release.id
-    for name in ("compression.json", "taat-daat.json", "graph.json", "latent.json", "benchmark-dev.json"):
-        path = reports / name
-        if path.is_file():
-            entries[f"artifacts/reports/{release.id}/{name}"] = path
+    for path in sorted(reports.glob("*")):
+        if path.is_file() and path.suffix in {".json", ".csv"}:
+            entries[f"artifacts/reports/{release.id}/{path.name}"] = path
     active = {
         "artifacts/releases/active.json": {"release_id": release.id},
         "bundle-manifest.json": {"release_id": release.id, "created_at": now(), "dense": bool(model),

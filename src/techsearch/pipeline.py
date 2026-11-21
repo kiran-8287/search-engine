@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import os
+import errno
 import re
 import shutil
 import tempfile
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,10 +37,23 @@ class Release:
 @contextmanager
 def staging(home):
     home.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix=".techsearch-build-", dir=home) as temporary:
-        folder = Path(temporary) / "files"
+    temporary = tempfile.TemporaryDirectory(prefix=".techsearch-build-", dir=home)
+    try:
+        folder = Path(temporary.name) / "files"
         folder.mkdir()
         yield folder
+    finally:
+        # NFS can briefly retain an unlinked open file while an interrupted
+        # writer closes. Retry that transient cleanup failure without masking
+        # the interruption or changing any completed release/checkpoint.
+        for attempt in range(5):
+            try:
+                temporary.cleanup()
+                break
+            except OSError as error:
+                if error.errno not in {errno.ENOTEMPTY, errno.EBUSY} or attempt == 4:
+                    raise
+                time.sleep(.1 * 2 ** attempt)
 
 
 @contextmanager
@@ -227,6 +242,10 @@ def open_release(settings, release_id=None, *, verify=False, deep=False):
 
 
 def validate_postings(directory):
+    import hashlib
+    import math
+    import struct
+    from collections import Counter, defaultdict
     from contextlib import ExitStack
 
     with ExitStack() as stack:
@@ -234,10 +253,65 @@ def validate_postings(directory):
         terms = indexes[0].files.sorted_terms
         if any(idx.files.sorted_terms != terms for idx in indexes):
             raise ReleaseUnavailable("Postings vocabulary differs by codec.")
+
+        # Compare both index directions with the canonical source, as three
+        # codecs can agree while sharing the same bad offsets or frequencies.
+        # A commutative digest keeps validation bounded by vocabulary size.
+        expected = defaultdict(lambda: [0, 0])
+        frequencies = Counter()
+        position_row = struct.Struct("<7I")
+
+        def fingerprint(doc, field, position):
+            return int.from_bytes(hashlib.sha256(position_row.pack(doc, field, *position)).digest(), "little")
+
+        baseline = indexes[0]
+        manifest = read_json(directory / "manifest.json")
+        weights = [manifest["weights"][field] for field in indexing.FIELDS]
+        totals = [0] * len(indexing.FIELDS)
+        occurrences = 0
+        for document in Documents(directory):
+            doc = document["doc"]
+            forward = defaultdict(Counter)
+            lengths = [0] * len(totals)
+            for field, segment, position, token, phrase_safe in indexing.analyze_parent(document):
+                lengths[field] += 1
+                for term, original in [(token.term, int(phrase_safe)), *((alias, 0) for alias in token.aliases)]:
+                    forward[term][str(field)] += 1
+                    expected[term][0] += 1
+                    expected[term][1] += fingerprint(doc, field, (segment, position, token.start, token.end, original))
+            if dict(forward) != baseline.terms(doc):
+                raise ReleaseUnavailable(f"Forward terms disagree with canonical document {doc}.")
+            frequencies.update(forward.keys())
+            indexed_length = sum(sum(fields.values()) for fields in forward.values())
+            occurrences += indexed_length
+            norm = math.sqrt(sum((indexing.tfidf_idf(baseline.info["parents"], baseline.df(term)) *
+                                  sum(weights[int(field)] * tf for field, tf in fields.items())) ** 2
+                                 for term, fields in forward.items()))
+            stored_lengths, stored_norm = baseline.length_stats(doc)
+            if (tuple(lengths) != stored_lengths or indexed_length != baseline.indexed_length(doc)
+                    or not math.isclose(norm, stored_norm, rel_tol=1e-12, abs_tol=1e-12)):
+                raise ReleaseUnavailable(f"Forward statistics disagree with canonical document {doc}.")
+            totals = [total + length for total, length in zip(totals, lengths)]
+        if (set(expected) != set(terms) or occurrences != baseline.info["occurrences"]
+                or sum(totals) != baseline.info["original_tokens"]
+                or sum(frequencies.values()) != baseline.info["postings"]):
+            raise ReleaseUnavailable("Lexical vocabulary or token totals disagree with canonical documents.")
+        if any(not math.isclose(total / baseline.info["parents"], average, rel_tol=1e-12, abs_tol=1e-12)
+               for total, average in zip(totals, baseline.info["avg_lengths"])):
+            raise ReleaseUnavailable("Lexical average lengths disagree with canonical documents.")
         for term in terms:
-            expected = indexes[0].posting(term)
-            if any(idx.posting(term) != expected for idx in indexes[1:]):
+            reference = baseline.posting(term)
+            if any(idx.posting(term) != reference for idx in indexes[1:]):
                 raise ReleaseUnavailable(f"Posting contents differ for {term!r}.")
+            df, cf, postings = reference
+            count, signature = 0, 0
+            for doc, fields in postings.items():
+                for field, positions in fields.items():
+                    for position in positions:
+                        count += 1
+                        signature += fingerprint(doc, field, position)
+            if (df != len(postings) or df != frequencies[term] or cf != count or [count, signature] != expected[term]):
+                raise ReleaseUnavailable(f"Postings disagree with canonical positions for {term!r}.")
             for idx in indexes:
                 idx.cache.clear()
 

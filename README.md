@@ -2,7 +2,7 @@
 
 TechSearch searches a frozen English corpus of MDN pages and Stack Overflow threads about JavaScript, HTML, CSS, accessibility, browser APIs, HTTP, security, and performance. Each hit is an original page or thread with source excerpts and attribution. The public interface routes searches automatically. The IR Lab exposes all eight modes, ranker settings, explanations, release statistics, and offline experiment reports.
 
-The implementation is prepared for local use. No dependencies were installed, collectors run, releases built, tests run, or benchmark results generated during preparation.
+Execution on Linux has produced a validated real lexical release with 7,691 documents. The existing exports are preserved; collection gaps are recorded separately. Dense construction and final release verification are in progress. See [execution results](docs/EXECUTION_REPORT.md), [status](docs/IMPLEMENTATION_STATUS.md), and [the work log](progress/WORK_LOG.md) for measured evidence and remaining work. Windows execution has not been tested.
 
 ## Start with the existing exports
 
@@ -36,6 +36,8 @@ ts_python=./.venv/bin/python
 
 Open Search at `http://127.0.0.1:8000/` and the IR Lab at `http://127.0.0.1:8000/lab`. The active release is selected at process startup. Restart after activating a new release. To exercise the optional browser checks, run `python -m playwright install chromium` in the project environment and then `python -m pytest -m browser`. Those checks use an isolated, synthetic corpus and a loopback server.
 
+On Linux hosts that need an OS-installed Chromium, use `python -m pytest tests/browser -m browser --browser-executable=/usr/bin/chromium-browser`. After building a dense release and running its experiments/benchmark, `python scripts/verify_app.py --browser-executable /usr/bin/chromium-browser` checks the running real app, all eight modes, API constraints, pagination, feedback interactions, report charts, and desktop/mobile rendering. It saves screenshots and a JSON report under `artifacts/execution/browser/`. Its automated feedback interaction is separate from benchmark relevance labels.
+
 ## Data acquisition and dense search
 
 Run these optional stages before `preprocess` when you want to refresh or enrich the supplied corpus. The stages that need network access are explicit. The unqualified `python` in the remaining examples refers to the project environment.
@@ -66,9 +68,9 @@ Use quotes for phrases. Escape a metacharacter with a backslash or enclose liter
 
 Run `python -m techsearch search "title:Promise.all" --mode field` for CLI access to the same service. See [the architecture](docs/MASTER_ARCHITECTURE.md) for ranking formulas, artifact formats, and evaluation policy.
 
-1. `python -m techsearch experiments --suite all` measures codec sizes and lookup times, TAAT/DAAT equivalence and performance, LSI retrieval, and K-means diagnostics.
+1. `python -m techsearch experiments --suite all` measures codec sizes and lookup times, TAAT/DAAT equivalence and performance, LSI retrieval, K-means diagnostics, likelihood, PageRank and MMR reranking, and a declared Rocchio vector probe. The probe is a controlled algorithm intervention; it creates no relevance judgments or quality metrics. Individual suites include `compression`, `taat-daat`, `latent`, and `retrieval`.
 2. `python -m techsearch freeze-evaluation` freezes 300 authored development and 300 authored test intent groups. Use only the development split when making ranking and cutoff decisions.
-3. `python -m techsearch benchmark --split dev` saves runs for Auto, BM25, dense, and hybrid. `--ablations` adds TF-IDF, likelihood, graph authority, and MMR.
+3. `python -m techsearch benchmark --split dev` saves runs for Auto, BM25, dense, and hybrid. `--ablations` adds TF-IDF, likelihood, graph authority, and MMR, and also exports the four baseline methods as a labeled subset of those same observations. No extra baseline execution is implied.
 4. `python -m techsearch evaluate --split dev` checks pool coverage and publishes metrics when fully judged. To explicitly send blind pooled excerpts to the configured provider, add `--annotate --limit 50` and rerun as needed. The limit counts newly judged candidate pairs. Audit/adjudication can add requests within each pair.
 5. After finalizing settings, use `benchmark --split test --confirm-sealed` and `evaluate --split test --confirm-sealed` for the held-out split. Run the same ablation flags for benchmarking and evaluation. The source catalog is included for reproducibility, so sealing depends on the experimental protocol.
 6. `python -m techsearch package-demo` writes a local presentation archive with the active release, frontend, launch scripts, and pinned encoder when available. Install a Python environment per OS using the appropriate wheelhouse for a disconnected machine. See the [demo run sheet](docs/DEMO_RUN_SHEET.md) and [source notices](docs/ATTRIBUTION.md).

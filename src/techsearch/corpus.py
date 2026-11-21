@@ -33,7 +33,7 @@ def url(value, base=""):
         if host == MDN and (path.startswith("/docs/") or path.lower().startswith("/en-us/docs/")):
             path = "/en-US/docs/" + path[(6 if path.startswith("/docs/") else 12):].rstrip("/")
         scheme = "https" if host in {MDN, SO, "www.stackoverflow.com"} else parts.scheme
-        return urlunsplit((scheme, netloc, path, "", parts.query, parts.fragment))
+        return urlunsplit((scheme, netloc, path, parts.query, parts.fragment))
     except (AttributeError, TypeError, ValueError):
         return None
 

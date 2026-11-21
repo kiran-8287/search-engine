@@ -93,6 +93,7 @@ def compression_report(release, queries, repeats):
 
 
 def latent_report(service, window, components, clusters, seed, queries):
+    started = perf_counter()
     import numpy as np
     from scipy.sparse import csr_matrix
     from sklearn.cluster import KMeans
@@ -152,11 +153,53 @@ def latent_report(service, window, components, clusters, seed, queries):
                     "anchor": service.parents[ids[0]]["stable"],
                     "nearest": [{"id": service.parents[ids[row]]["stable"], "cosine": float(cosine[row])} for row in nearest],
                     "query_runs": query_runs},
-            "kmeans": {**diagnostics, "assignments": list(map(int, labels))}}
+            "kmeans": {**diagnostics, "assignments": list(map(int, labels))},
+            "seconds": perf_counter() - started}
+
+
+def retrieval_report(service, queries):
+    """Measured algorithm interventions, without creating relevance labels."""
+    from .feedback import rocchio
+    from .query import Matcher, parse
+    from .retrieval import lexical
+
+    rows = []
+    for query in queries:
+        methods = {}
+        for name, options in (("bm25", {}), ("likelihood", {"ranker": "likelihood"}),
+                              ("pagerank", {"authority": True}), ("mmr", {"diversify": True})):
+            result = service.search(query, mode="keyword", **options)
+            methods[name] = {"options": {"mode": "keyword", **options}, "timing_ms": result["timing_ms"],
+                             "trace": result["trace"],
+                             "hits": [{"id": hit["id"], "score": hit["score"]} for hit in result["results"]]}
+        started = perf_counter()
+        with ExitStack() as stack:
+            index = Index(service.release.path, stack, files=service.index_files)
+            parsed = parse(query, "keyword", service.settings.search, service.topics)
+            matcher = Matcher(index, service.metadata, service.all_docs, service.settings.search)
+            eligible = matcher.match(parsed.constraint)
+            original = matcher.scoring(parsed.scoring)
+            # Select the first BM25 hit as a declared vector probe. This is a
+            # controlled transformation, never a qrel or a user judgment.
+            probe = methods["bm25"]["hits"][:1]
+            interventions = {hit["id"]: 1 for hit in probe}
+            expanded, terms = rocchio(index, original, interventions, service.stable_to_doc, eligible)
+            ranked, work = lexical(index, expanded, eligible, service.settings.search,
+                                   depth=service.settings.search["max_results"])
+            methods["rocchio_probe"] = {
+                "probe_document": probe[0]["id"] if probe else None,
+                "beta": .75, "gamma": .25, "expansion_limit": 6,
+                "expansion": terms, "timing_ms": (perf_counter() - started) * 1000,
+                "work": work, "hits": [{"id": service.parents[doc]["stable"], "score": score}
+                                       for doc, score, _ in ranked]}
+        rows.append({"query": query, "methods": methods})
+    return {"queries": list(queries), "rows": rows,
+            "label_policy": "No relevance labels or quality metrics. Rocchio uses an explicitly selected BM25 vector probe; it is not an annotation."}
 
 
 def save_report(settings, release, name, report):
-    value = {"release_id": release.id, "created_at": now(), "name": name, "report": report}
+    value = {"release_id": release.id, "created_at": now(), "name": name,
+             "config_fingerprint": settings.fingerprint, "configuration": settings.default, "report": report}
     home = settings.path("artifacts") / "reports" / release.id
     write_json(home / f"{name}-{digest(value)[:16]}.json", value)
     write_json(home / f"{name}.json", value)

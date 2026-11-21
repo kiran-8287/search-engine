@@ -36,6 +36,15 @@ def main():
     pip = [str(executable), "-m", "pip", "install"]
     if args.wheelhouse:
         pip.extend(("--no-index", "--find-links", str(args.wheelhouse.resolve())))
+    # PyPI's Linux torch wheels pull in CUDA libraries, although the encoder
+    # always runs on CPU. Install from the official CPU index first so the
+    # project's dense extra reuses that distribution. Offline wheelhouses
+    # supply their own platform-specific torch wheel.
+    if not args.lexical_only:
+        torch_pip = [*pip]
+        if not args.wheelhouse:
+            torch_pip.extend(("--index-url", "https://download.pytorch.org/whl/cpu"))
+        subprocess.run([*torch_pip, "torch>=1.11"], cwd=ROOT, check=True)
     subprocess.run([*pip, "-e", f".[{','.join(extras)}]"], cwd=ROOT, check=True)
     subprocess.run([str(executable), "-m", "pip", "check"], cwd=ROOT, check=True)
     if args.browsers:
