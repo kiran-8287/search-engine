@@ -1,0 +1,9 @@
+# Decisions
+
+- File-based storage supersedes the earlier database design. Canonical and passage records use indexed JSONL, lexical artifacts use binary payloads, and dense arrays use NumPy. Runtime records live in a separate directory.
+- The latest execution instruction allows workspace inspection and file edits. Installation, acquisition, release generation, test runs, benchmarks, evaluation, server launch and browser automation are left for explicit later runs. Dependency ranges are declarations awaiting resolution and compatibility checks.
+- Legacy root exports are accepted in place. Each flat source entity gets a single `legacy_flat` segment for keyword evidence. Phrase matches require structured segments or titles because flat exports lack internal boundaries. Reacquisition from pinned source can recover missing macro labels and lost code formatting. Link corrections come from source inventory, known URL aliases, and redirect files.
+- Scope decisions begin with configured roots, framework/server exclusions and tagged/content cues. Coverage of glossary/learning pages, broad SO tag eligibility, and answer availability needs review against a measured release. Near duplicates are currently reported using normalized-title collisions; exact body duplicates within a source are quarantined.
+- Auto's initial cutoffs are configurable and await dev calibration. Evaluation methods explicitly disclose availability, and mixed development/test progress is stored by split and release.
+- Experiment timings distinguish fresh and reused readers within a process and record that the OS cache is shared. Process-level cold cache, peak total RSS on the target OS, dependency compatibility, and resource use on the full corpus have yet to be measured.
+- A demonstration ZIP is designed for local use. Dependency wheels must match the target OS and Python version. Validate both corpus licensing and model terms before redistributing the bundle.

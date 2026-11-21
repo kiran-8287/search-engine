@@ -1,0 +1,601 @@
+# split	class	intent group	query
+dev	exact-api	dev-exact-api-01	Promise.all
+dev	exact-api	dev-exact-api-02	document.querySelector
+dev	exact-api	dev-exact-api-03	Array.prototype.flatMap
+dev	exact-api	dev-exact-api-04	CSS.supports
+dev	exact-api	dev-exact-api-05	AbortSignal.timeout
+dev	exact-api	dev-exact-api-06	URLSearchParams.getAll
+dev	exact-api	dev-exact-api-07	HTMLElement.dataset
+dev	exact-api	dev-exact-api-08	structuredClone
+dev	exact-api	dev-exact-api-09	Element.closest
+dev	exact-api	dev-exact-api-10	Event.stopImmediatePropagation
+dev	exact-api	dev-exact-api-11	ResizeObserver.observe
+dev	exact-api	dev-exact-api-12	HTMLDialogElement.showModal
+dev	exact-api	dev-exact-api-13	HTMLInputElement.setCustomValidity
+dev	exact-api	dev-exact-api-14	TextEncoder.encode
+dev	exact-api	dev-exact-api-15	IndexedDB IDBTransaction.abort
+dev	exact-api	dev-exact-api-16	Cache.match
+dev	exact-api	dev-exact-api-17	Response.clone
+dev	exact-api	dev-exact-api-18	Clipboard.writeText
+dev	exact-api	dev-exact-api-19	Node.normalize
+dev	exact-api	dev-exact-api-20	Window.matchMedia
+dev	exact-api	dev-exact-api-21	Navigator.sendBeacon
+dev	exact-api	dev-exact-api-22	PerformanceObserver.observe
+dev	exact-api	dev-exact-api-23	CustomElementRegistry.define
+dev	exact-api	dev-exact-api-24	CSS.escape
+dev	exact-api	dev-exact-api-25	FormData.append
+test	exact-api	test-exact-api-01	Promise.any
+test	exact-api	test-exact-api-02	document.elementsFromPoint
+test	exact-api	test-exact-api-03	Array.prototype.toSorted
+test	exact-api	test-exact-api-04	requestIdleCallback
+test	exact-api	test-exact-api-05	AbortSignal.any
+test	exact-api	test-exact-api-06	URL.canParse
+test	exact-api	test-exact-api-07	Element.toggleAttribute
+test	exact-api	test-exact-api-08	Object.hasOwn
+test	exact-api	test-exact-api-09	Element.getBoundingClientRect
+test	exact-api	test-exact-api-10	Event.composedPath
+test	exact-api	test-exact-api-11	IntersectionObserver.takeRecords
+test	exact-api	test-exact-api-12	HTMLDialogElement.close
+test	exact-api	test-exact-api-13	HTMLFormElement.requestSubmit
+test	exact-api	test-exact-api-14	TextDecoderStream
+test	exact-api	test-exact-api-15	IDBObjectStore.openKeyCursor
+test	exact-api	test-exact-api-16	CacheStorage.keys
+test	exact-api	test-exact-api-17	ReadableStream.tee
+test	exact-api	test-exact-api-18	Clipboard.readText
+test	exact-api	test-exact-api-19	Document.createRange
+test	exact-api	test-exact-api-20	Window.postMessage
+test	exact-api	test-exact-api-21	Navigator.vibrate
+test	exact-api	test-exact-api-22	Performance.mark
+test	exact-api	test-exact-api-23	CustomElementRegistry.whenDefined
+test	exact-api	test-exact-api-24	DOMParser.parseFromString
+test	exact-api	test-exact-api-25	Headers.getSetCookie
+dev	operator	dev-operator-01	=== strict equality with objects
+dev	operator	dev-operator-02	=> arrow functions lexical this
+dev	operator	dev-operator-03	?? null coalescing fallback for zero
+dev	operator	dev-operator-04	?. optional access on null
+dev	operator	dev-operator-05	&& short circuit for JSX-free JavaScript
+dev	operator	dev-operator-06	... array spread shallow copy
+dev	operator	dev-operator-07	** exponent precedence
+dev	operator	dev-operator-08	delete object property
+dev	operator	dev-operator-09	void zero result
+dev	operator	dev-operator-10	in checks inherited properties
+dev	operator	dev-operator-11	instanceof across iframes
+dev	operator	dev-operator-12	typeof undeclared variables
+dev	operator	dev-operator-13	new return value primitive
+dev	operator	dev-operator-14	| bitwise truncation
+dev	operator	dev-operator-15	~ bitwise complement signed integer
+dev	operator	dev-operator-16	<< left shift count wrapping
+dev	operator	dev-operator-17	>>> unsigned shift
+dev	operator	dev-operator-18	++ prefix increment
+dev	operator	dev-operator-19	+= string concatenation
+dev	operator	dev-operator-20	/= assignment division
+dev	operator	dev-operator-21	% remainder with negatives
+dev	operator	dev-operator-22	for of iterable values
+dev	operator	dev-operator-23	await rejection handling
+dev	operator	dev-operator-24	Object.is negative zero
+dev	operator	dev-operator-25	?: ternary nesting
+test	operator	test-operator-01	!== comparison of different types
+test	operator	test-operator-02	?.() optional method invocation
+test	operator	test-operator-03	??= nullish assignment
+test	operator	test-operator-04	&&= logical and assignment
+test	operator	test-operator-05	||= logical or assignment
+test	operator	test-operator-06	... rest parameter with named arguments
+test	operator	test-operator-07	**= exponentiation assignment
+test	operator	test-operator-08	delete array creates hole
+test	operator	test-operator-09	void operator in bookmarklet expressions
+test	operator	test-operator-10	in operator with private fields
+test	operator	test-operator-11	instanceof customization Symbol.hasInstance
+test	operator	test-operator-12	typeof null historical behavior
+test	operator	test-operator-13	new optional chain syntax restriction
+test	operator	test-operator-14	^ bitwise XOR
+test	operator	test-operator-15	& mask bits
+test	operator	test-operator-16	>> signed shift
+test	operator	test-operator-17	~ BigInt complement
+test	operator	test-operator-18	-- postfix decrement
+test	operator	test-operator-19	*= coercion in multiplication assignment
+test	operator	test-operator-20	%= remainder assignment
+test	operator	test-operator-21	+ unary plus BigInt error
+test	operator	test-operator-22	for in enumerates inherited keys
+test	operator	test-operator-23	yield delegation syntax
+test	operator	test-operator-24	isNaN global coercion
+test	operator	test-operator-25	comma operator evaluation order
+dev	natural-language	dev-natural-language-01	How can a website remember a theme without a backend?
+dev	natural-language	dev-natural-language-02	Let visitors print a page without navigation links
+dev	natural-language	dev-natural-language-03	Change images when the device prefers a dark theme
+dev	natural-language	dev-natural-language-04	When should I pick a weak map for DOM element metadata?
+dev	natural-language	dev-natural-language-05	Run a callback once a page stops being visible
+dev	natural-language	dev-natural-language-06	Show live preview of a file before uploading it
+dev	natural-language	dev-natural-language-07	Share text from a web page to installed apps
+dev	natural-language	dev-natural-language-08	Keep a site navigable if scripts fail
+dev	natural-language	dev-natural-language-09	Ship a site that can function without a connection
+dev	natural-language	dev-natural-language-10	Explain event bubbling to a new developer
+dev	natural-language	dev-natural-language-11	Choose between form submission and fetch for saving edits
+dev	natural-language	dev-natural-language-12	Explain what an origin consists of in a browser
+dev	natural-language	dev-natural-language-13	Spread expensive calculations across several animation frames
+dev	natural-language	dev-natural-language-14	Make a table header repeat on printed pages
+dev	natural-language	dev-natural-language-15	Let details expand without writing JavaScript
+dev	natural-language	dev-natural-language-16	Tell a browser that a link is a download
+dev	natural-language	dev-natural-language-17	Use browser language preferences for display formatting
+dev	natural-language	dev-natural-language-18	Display related definitions without a script-controlled tooltip
+dev	natural-language	dev-natural-language-19	Pause updates when a dashboard tab goes into the background
+dev	natural-language	dev-natural-language-20	Size an image without causing content to shift
+dev	natural-language	dev-natural-language-21	Restore route state when the user presses back
+dev	natural-language	dev-natural-language-22	Keep scrolled content anchored when messages are inserted
+dev	natural-language	dev-natural-language-23	Detect when a client is offline before retrying an upload
+dev	natural-language	dev-natural-language-24	Play an animation only when its element is on screen
+dev	natural-language	dev-natural-language-25	Explain why a document fragment can help when creating a list
+test	natural-language	test-natural-language-01	Make a dropdown close when focus leaves its container
+test	natural-language	test-natural-language-02	Read progress while a network response is downloading
+test	natural-language	test-natural-language-03	Avoid duplicate forms when a browser reloads a POST history entry
+test	natural-language	test-natural-language-04	Turn a nondistributable browser feature into a progressive enhancement
+test	natural-language	test-natural-language-05	Allow plain text to be broken at a chosen syllable
+test	natural-language	test-natural-language-06	Choose a user-selected image directory in a browser
+test	natural-language	test-natural-language-07	Represent a time interval for a semantic webpage
+test	natural-language	test-natural-language-08	Build a nested keyboard navigation hierarchy
+test	natural-language	test-natural-language-09	Show a browser permission request only after a deliberate click
+test	natural-language	test-natural-language-10	Avoid triggering an image request until a scroller reaches it
+test	natural-language	test-natural-language-11	Explain how cascade layers resolve competing styles
+test	natural-language	test-natural-language-12	Create an accessible progress update without moving focus
+test	natural-language	test-natural-language-13	Choose how a browser preserves a scroll position in history
+test	natural-language	test-natural-language-14	Share limited data between tabs from the same site
+test	natural-language	test-natural-language-15	Have two tabs coordinate ownership of a background task
+test	natural-language	test-natural-language-16	Provide print and screen page titles in a useful structure
+test	natural-language	test-natural-language-17	Measure when a browser can first interact with a large page
+test	natural-language	test-natural-language-18	Show text in the correct order for mixed-direction names
+test	natural-language	test-natural-language-19	Map network failures to retry controls in a browser
+test	natural-language	test-natural-language-20	Smooth out a browser animation by using high-resolution time
+test	natural-language	test-natural-language-21	Write long English numbers in compact notation
+test	natural-language	test-natural-language-22	Decide when to store an array buffer in IndexedDB
+test	natural-language	test-natural-language-23	Show a native prompt to install a compatible web app
+test	natural-language	test-natural-language-24	Make form controls reflect an inherited writing direction
+test	natural-language	test-natural-language-25	Choose metadata that controls how referrers are sent
+dev	debugging	dev-debugging-01	Why is this setTimeout callback seeing the last loop index?
+dev	debugging	dev-debugging-02	Fetch resolves even with a 404 status
+dev	debugging	dev-debugging-03	Grid child refuses to shrink below its long text
+dev	debugging	dev-debugging-04	CORS preflight options returns forbidden in browser
+dev	debugging	dev-debugging-05	addEventListener callback executes immediately
+dev	debugging	dev-debugging-06	cloneNode does not copy a button click listener
+dev	debugging	dev-debugging-07	setState is not involved but DOM event target differs from currentTarget
+dev	debugging	dev-debugging-08	MutationObserver keeps firing after I edit an element
+dev	debugging	dev-debugging-09	Browser won't apply scroll when body height is zero
+dev	debugging	dev-debugging-10	URL login callback loses fragments on server
+dev	debugging	dev-debugging-11	json parse fails on HTML response from fetch
+dev	debugging	dev-debugging-12	Input value attribute does not update when user types
+dev	debugging	dev-debugging-13	Promise chain swallows catch error and continues
+dev	debugging	dev-debugging-14	Browser rejects a cookie with SameSite=None over HTTP
+dev	debugging	dev-debugging-15	Image load complete is true even when broken
+dev	debugging	dev-debugging-16	A Canvas image draws but reading pixels throws a security error
+dev	debugging	dev-debugging-17	Some divs are movable even though z-index is greater
+dev	debugging	dev-debugging-18	Firefox prevents autofocus inside a cross-origin frame
+dev	debugging	dev-debugging-19	CSS transition doesn't start when display changes from none
+dev	debugging	dev-debugging-20	getBoundingClientRect values change when scrolling
+dev	debugging	dev-debugging-21	postMessage origin assertion fails with different port
+dev	debugging	dev-debugging-22	An IndexedDB transaction closes while awaiting a fetch
+dev	debugging	dev-debugging-23	Dialog top layer appears above fixed navbar
+dev	debugging	dev-debugging-24	WebSocket bufferedAmount keeps growing after connection drop
+dev	debugging	dev-debugging-25	CSS selector works once an id with a period is escaped
+test	debugging	test-debugging-01	Service worker update waits even after page reload
+test	debugging	test-debugging-02	Invalid Date displayed only for a non-ISO string
+test	debugging	test-debugging-03	Sticky element never sticks inside overflow hidden ancestor
+test	debugging	test-debugging-04	Same text key event repeats even when keydown expected once
+test	debugging	test-debugging-05	AudioContext stays suspended until there is interaction
+test	debugging	test-debugging-06	Range selection disappears when the page loses focus
+test	debugging	test-debugging-07	Why is addEventListener passive preventing preventDefault?
+test	debugging	test-debugging-08	ResizeObserver loop completed with undelivered notifications
+test	debugging	test-debugging-09	Preloaded font still downloads twice because of credentials mismatch
+test	debugging	test-debugging-10	getUserMedia rejects when the page is framed
+test	debugging	test-debugging-11	iframe sandbox gives a null origin
+test	debugging	test-debugging-12	Style declaration disappears when custom property evaluates invalid
+test	debugging	test-debugging-13	Missing autocomplete label for browser autofill
+test	debugging	test-debugging-14	Padding changes the computed SVG view area
+test	debugging	test-debugging-15	Accessibility tree hides a nested control with aria-hidden ancestor
+test	debugging	test-debugging-16	Referrer policy strips pathname unexpectedly in a request
+test	debugging	test-debugging-17	History pushState throws DataCloneError
+test	debugging	test-debugging-18	Storage quota error while adding blobs
+test	debugging	test-debugging-19	Pointer events don't arrive after pointer capture is taken
+test	debugging	test-debugging-20	Intersection observer reports zero visible area for an edge touch
+test	debugging	test-debugging-21	Array sort reorders numbers lexicographically
+test	debugging	test-debugging-22	Reference disappears after an ArrayBuffer transfer
+test	debugging	test-debugging-23	fetch sends an opaque response with no readable body
+test	debugging	test-debugging-24	Template element children aren't found by a document selector
+test	debugging	test-debugging-25	Event listener with an aborted signal never runs
+dev	css-html	dev-css-html-01	CSS container queries containment and named containers
+dev	css-html	dev-css-html-02	HTML details and summary headings
+dev	css-html	dev-css-html-03	CSS grid subgrid column alignment
+dev	css-html	dev-css-html-04	HTML figure and figcaption accessible description
+dev	css-html	dev-css-html-05	CSS flex direction column and gap
+dev	css-html	dev-css-html-06	HTML responsive images srcset sizes
+dev	css-html	dev-css-html-07	CSS aspect ratio replaced elements
+dev	css-html	dev-css-html-08	HTML label implicit association
+dev	css-html	dev-css-html-09	CSS logical margin inline start
+dev	css-html	dev-css-html-10	HTML input constraint validation pattern
+dev	css-html	dev-css-html-11	CSS Unicode range for fonts
+dev	css-html	dev-css-html-12	HTML contenteditable plaintext-only
+dev	css-html	dev-css-html-13	CSS clip-path polygon punctuation
+dev	css-html	dev-css-html-14	HTML select optgroup labeling
+dev	css-html	dev-css-html-15	CSS color-mix interpolation space
+dev	css-html	dev-css-html-16	HTML inert and focus management
+dev	css-html	dev-css-html-17	CSS minmax on track sizing
+dev	css-html	dev-css-html-18	HTML time datetime machine readable
+dev	css-html	dev-css-html-19	CSS rem versus em units
+dev	css-html	dev-css-html-20	HTML caption with table scope header
+dev	css-html	dev-css-html-21	CSS image-set density selection
+dev	css-html	dev-css-html-22	HTML head base relative links
+dev	css-html	dev-css-html-23	CSS attribute selectors case insensitive flag
+dev	css-html	dev-css-html-24	HTML slot assignment named slots
+dev	css-html	dev-css-html-25	CSS overscroll-behavior containment
+test	css-html	test-css-html-01	CSS anchor positioning fallback placement
+test	css-html	test-css-html-02	HTML fieldset legend grouping
+test	css-html	test-css-html-03	CSS grid auto-fit versus auto-fill
+test	css-html	test-css-html-04	HTML source picture art direction
+test	css-html	test-css-html-05	CSS flex basis content sizing
+test	css-html	test-css-html-06	HTML opt-in Cross Origin Resource Policy links and images
+test	css-html	test-css-html-07	CSS transforms preserve-3d flattening
+test	css-html	test-css-html-08	HTML datalist with type range
+test	css-html	test-css-html-09	CSS logical border radius corners
+test	css-html	test-css-html-10	HTML output form association
+test	css-html	test-css-html-11	CSS writing-mode vertical text
+test	css-html	test-css-html-12	HTML meter versus progress
+test	css-html	test-css-html-13	CSS scroll snap strictness
+test	css-html	test-css-html-14	HTML button type reset behavior
+test	css-html	test-css-html-15	CSS relative color syntax channel operations
+test	css-html	test-css-html-16	HTML loading lazy image attributes
+test	css-html	test-css-html-17	CSS fit-content block sizing
+test	css-html	test-css-html-18	HTML abbr title accessible expanded name
+test	css-html	test-css-html-19	CSS ch unit and proportional fonts
+test	css-html	test-css-html-20	HTML ruby annotation fallback
+test	css-html	test-css-html-21	CSS font-variation-settings optical sizing
+test	css-html	test-css-html-22	HTML template shadowrootmode
+test	css-html	test-css-html-23	CSS sibling combinators and selector lists
+test	css-html	test-css-html-24	HTML picture media fallback order
+test	css-html	test-css-html-25	CSS text-wrap balance heading fit
+dev	rare	dev-rare-01	Document.adoptNode changes ownerDocument
+dev	rare	dev-rare-02	CSS contain-intrinsic-size auto remembered size
+dev	rare	dev-rare-03	HTML area shape poly coordinates
+dev	rare	dev-rare-04	ReadableStreamBYOBReader read with view
+dev	rare	dev-rare-05	WorkerNavigator.hardwareConcurrency
+dev	rare	dev-rare-06	AbortController signal carrying reason
+dev	rare	dev-rare-07	DOMRectReadOnly.fromRect defaults
+dev	rare	dev-rare-08	CSS image-orientation from-image
+dev	rare	dev-rare-09	ARIA aria-details relation
+dev	rare	dev-rare-10	CSS counter-set nested list
+dev	rare	dev-rare-11	PopStateEvent.hasUAVisualTransition
+dev	rare	dev-rare-12	NavigationPreloadManager.enable
+dev	rare	dev-rare-13	XMLSerializer.serializeToString
+dev	rare	dev-rare-14	Web Locks lock mode shared
+dev	rare	dev-rare-15	URLSearchParams.sort stable duplicate keys
+dev	rare	dev-rare-16	CSS animation-timeline scroll progress
+dev	rare	dev-rare-17	DedicatedWorkerGlobalScope.close queued tasks
+dev	rare	dev-rare-18	DOMImplementation.createDocumentType
+dev	rare	dev-rare-19	GeolocationPositionError codes
+dev	rare	dev-rare-20	CSS ruby-position alternate
+dev	rare	dev-rare-21	Crypto subtle generateKey extractable flag
+dev	rare	dev-rare-22	DOMTokenList.supports supported tokens
+dev	rare	dev-rare-23	MathMLElement tabIndex in DOM
+dev	rare	dev-rare-24	Window crossOriginIsolated
+dev	rare	dev-rare-25	VisibilityStateEntry entry type
+test	rare	test-rare-01	Document.importNode deep custom elements
+test	rare	test-rare-02	CSS position-area grid values
+test	rare	test-rare-03	HTML colgroup span attribute
+test	rare	test-rare-04	ReadableStreamDefaultController desiredSize
+test	rare	test-rare-05	WorkerGlobalScope.importScripts classic script
+test	rare	test-rare-06	AbortSignal.throwIfAborted reason
+test	rare	test-rare-07	DOMPointReadOnly.matrixTransform
+test	rare	test-rare-08	CSS image-rendering pixelated
+test	rare	test-rare-09	ARIA aria-dropeffect obsolete
+test	rare	test-rare-10	CSS counter-reset reversed counters
+test	rare	test-rare-11	PageTransitionEvent.persisted
+test	rare	test-rare-12	NavigationPreloadManager.getState
+test	rare	test-rare-13	TreeWalker FILTER_REJECT versus FILTER_SKIP
+test	rare	test-rare-14	Web Locks ifAvailable and steal
+test	rare	test-rare-15	URLSearchParams.delete optional value
+test	rare	test-rare-16	CSS view-transition-name uniqueness
+test	rare	test-rare-17	SharedWorkerGlobalScope.connect ports
+test	rare	test-rare-18	DocumentType.publicId
+test	rare	test-rare-19	MediaQueryListEvent.matches events
+test	rare	test-rare-20	CSS font-palette animation
+test	rare	test-rare-21	Crypto subtle wrapKey usages
+test	rare	test-rare-22	DOMTokenList.replace tokens
+test	rare	test-rare-23	Attr.ownerElement after removal
+test	rare	test-rare-24	scheduler.postTask priority
+test	rare	test-rare-25	PerformanceResourceTiming.serverTiming
+dev	phrase	dev-phrase-01	"same origin policy"
+dev	phrase	dev-phrase-02	"event loop"
+dev	phrase	dev-phrase-03	"strict mode"
+dev	phrase	dev-phrase-04	"box sizing"
+dev	phrase	dev-phrase-05	"scroll anchoring"
+dev	phrase	dev-phrase-06	"shadow root"
+dev	phrase	dev-phrase-07	"transferable objects"
+dev	phrase	dev-phrase-08	"template literals"
+dev	phrase	dev-phrase-09	"network error"
+dev	phrase	dev-phrase-10	"keyboard focus"
+dev	phrase	dev-phrase-11	"animation frame"
+dev	phrase	dev-phrase-12	"media query"
+dev	phrase	dev-phrase-13	"stack trace"
+dev	phrase	dev-phrase-14	"prototype chain"
+dev	phrase	dev-phrase-15	"storage event"
+dev	phrase	dev-phrase-16	"back forward cache"
+dev	phrase	dev-phrase-17	"unicode code point"
+dev	phrase	dev-phrase-18	"event listener"
+dev	phrase	dev-phrase-19	"first contentful paint"
+dev	phrase	dev-phrase-20	"named grid lines"
+dev	phrase	dev-phrase-21	"viewport units"
+dev	phrase	dev-phrase-22	"anonymous function"
+dev	phrase	dev-phrase-23	"form data"
+dev	phrase	dev-phrase-24	"canvas rendering context"
+dev	phrase	dev-phrase-25	"property descriptor"
+test	phrase	test-phrase-01	"content security policy"
+test	phrase	test-phrase-02	"microtask queue"
+test	phrase	test-phrase-03	"quirks mode"
+test	phrase	test-phrase-04	"intrinsic sizing"
+test	phrase	test-phrase-05	"scroll snapping"
+test	phrase	test-phrase-06	"custom element registry"
+test	phrase	test-phrase-07	"structured clone algorithm"
+test	phrase	test-phrase-08	"tagged templates"
+test	phrase	test-phrase-09	"connection reuse"
+test	phrase	test-phrase-10	"focus indicator"
+test	phrase	test-phrase-11	"transition duration"
+test	phrase	test-phrase-12	"forced colors mode"
+test	phrase	test-phrase-13	"source map"
+test	phrase	test-phrase-14	"iterator protocol"
+test	phrase	test-phrase-15	"storage partitioning"
+test	phrase	test-phrase-16	"page lifecycle"
+test	phrase	test-phrase-17	"grapheme cluster"
+test	phrase	test-phrase-18	"event propagation"
+test	phrase	test-phrase-19	"interaction to next paint"
+test	phrase	test-phrase-20	"implicit grid tracks"
+test	phrase	test-phrase-21	"dynamic viewport"
+test	phrase	test-phrase-22	"function declaration"
+test	phrase	test-phrase-23	"validation message"
+test	phrase	test-phrase-24	"offscreen canvas"
+test	phrase	test-phrase-25	"own enumerable properties"
+dev	boolean	dev-boolean-01	fetch AND abort
+dev	boolean	dev-boolean-02	html AND (dialog OR popover)
+dev	boolean	dev-boolean-03	css AND grid AND NOT flex
+dev	boolean	dev-boolean-04	dom AND selector OR XPath
+dev	boolean	dev-boolean-05	aria AND button AND NOT disabled
+dev	boolean	dev-boolean-06	promise AND NOT callbacks
+dev	boolean	dev-boolean-07	event AND (capture OR bubble)
+dev	boolean	dev-boolean-08	cors AND preflight
+dev	boolean	dev-boolean-09	grid OR gap AND alignment
+dev	boolean	dev-boolean-10	sessionStorage AND window
+dev	boolean	dev-boolean-11	validation AND input AND NOT checkbox
+dev	boolean	dev-boolean-12	script AND defer OR async
+dev	boolean	dev-boolean-13	CSS AND sticky AND NOT fixed
+dev	boolean	dev-boolean-14	HTTP AND etag
+dev	boolean	dev-boolean-15	image AND picture AND NOT canvas
+dev	boolean	dev-boolean-16	font AND preload
+dev	boolean	dev-boolean-17	wasm AND memory
+dev	boolean	dev-boolean-18	animation AND requestAnimationFrame
+dev	boolean	dev-boolean-19	navigation AND history AND state
+dev	boolean	dev-boolean-20	mutation AND observer AND NOT resize
+dev	boolean	dev-boolean-21	doctype AND quirks
+dev	boolean	dev-boolean-22	cookie AND samesite
+dev	boolean	dev-boolean-23	fetch AND credentials AND NOT headers
+dev	boolean	dev-boolean-24	range AND selection
+dev	boolean	dev-boolean-25	svg AND viewBox
+test	boolean	test-boolean-01	abort AND timeout AND NOT interval
+test	boolean	test-boolean-02	HTML AND (details OR summary)
+test	boolean	test-boolean-03	flex AND basis AND NOT grid
+test	boolean	test-boolean-04	document AND selector OR matches
+test	boolean	test-boolean-05	aria AND live AND NOT polite
+test	boolean	test-boolean-06	promise AND rejected OR fulfilled
+test	boolean	test-boolean-07	event AND (passive OR once)
+test	boolean	test-boolean-08	crossorigin AND referrerpolicy
+test	boolean	test-boolean-09	gap OR column AND grid
+test	boolean	test-boolean-10	localStorage AND storage
+test	boolean	test-boolean-11	form AND reportValidity AND NOT reset
+test	boolean	test-boolean-12	module AND import AND NOT commonjs
+test	boolean	test-boolean-13	css AND absolute AND NOT sticky
+test	boolean	test-boolean-14	http AND last-modified
+test	boolean	test-boolean-15	canvas AND tainted AND NOT svg
+test	boolean	test-boolean-16	font AND (swap OR block)
+test	boolean	test-boolean-17	wasm AND validate
+test	boolean	test-boolean-18	animation AND timeline
+test	boolean	test-boolean-19	navigation AND (replaceState OR popstate)
+test	boolean	test-boolean-20	resize AND observer AND NOT mutation
+test	boolean	test-boolean-21	encoding AND charset
+test	boolean	test-boolean-22	cookie AND httponly
+test	boolean	test-boolean-23	fetch AND headers AND NOT integrity
+test	boolean	test-boolean-24	range AND collapse
+test	boolean	test-boolean-25	svg AND path AND NOT rect
+dev	fuzzy	dev-fuzzy-01	querrySelector
+dev	fuzzy	dev-fuzzy-02	promsie.all
+dev	fuzzy	dev-fuzzy-03	arrray flat
+dev	fuzzy	dev-fuzzy-04	document freagment
+dev	fuzzy	dev-fuzzy-05	resposne headers
+dev	fuzzy	dev-fuzzy-06	abortcontroler
+dev	fuzzy	dev-fuzzy-07	acessibility
+dev	fuzzy	dev-fuzzy-08	transiton
+dev	fuzzy	dev-fuzzy-09	currenTarget
+dev	fuzzy	dev-fuzzy-10	poinnter events
+dev	fuzzy	dev-fuzzy-11	validaton
+dev	fuzzy	dev-fuzzy-12	typof
+dev	fuzzy	dev-fuzzy-13	foramt vlaue
+dev	fuzzy	dev-fuzzy-14	pretflight
+dev	fuzzy	dev-fuzzy-15	cors credentails
+dev	fuzzy	dev-fuzzy-16	observr
+dev	fuzzy	dev-fuzzy-17	interesction observer
+dev	fuzzy	dev-fuzzy-18	storagge event
+dev	fuzzy	dev-fuzzy-19	documment
+dev	fuzzy	dev-fuzzy-20	lenght aray
+dev	fuzzy	dev-fuzzy-21	subgridd
+dev	fuzzy	dev-fuzzy-22	colum gap
+dev	fuzzy	dev-fuzzy-23	headres
+dev	fuzzy	dev-fuzzy-24	deffer
+dev	fuzzy	dev-fuzzy-25	broser event
+test	fuzzy	test-fuzzy-01	getElemenById
+test	fuzzy	test-fuzzy-02	innerhtmll
+test	fuzzy	test-fuzzy-03	sctructuredClone
+test	fuzzy	test-fuzzy-04	axcessibility tree
+test	fuzzy	test-fuzzy-05	handdler
+test	fuzzy	test-fuzzy-06	samesitte cookie
+test	fuzzy	test-fuzzy-07	remaning quota in storage
+test	fuzzy	test-fuzzy-08	nodlist
+test	fuzzy	test-fuzzy-09	relatve position
+test	fuzzy	test-fuzzy-10	tabindx
+test	fuzzy	test-fuzzy-11	mediaquerry
+test	fuzzy	test-fuzzy-12	contaner layout
+test	fuzzy	test-fuzzy-13	consle warning
+test	fuzzy	test-fuzzy-14	evetn delegation
+test	fuzzy	test-fuzzy-15	compsoedPath
+test	fuzzy	test-fuzzy-16	keyborad key
+test	fuzzy	test-fuzzy-17	navgiator
+test	fuzzy	test-fuzzy-18	sensitivty selector
+test	fuzzy	test-fuzzy-19	scrolllIntoView
+test	fuzzy	test-fuzzy-20	overscrol
+test	fuzzy	test-fuzzy-21	persit
+test	fuzzy	test-fuzzy-22	modely dialog
+test	fuzzy	test-fuzzy-23	legned
+test	fuzzy	test-fuzzy-24	clickble label
+test	fuzzy	test-fuzzy-25	econding
+dev	field	dev-field-01	title:Promise.all
+dev	field	dev-field-02	source:mdn fetch streaming
+dev	field	dev-field-03	tag:javascript arrays
+dev	field	dev-field-04	topic:css centering
+dev	field	dev-field-05	heading:Syntax geolocation
+dev	field	dev-field-06	code:=== equality
+dev	field	dev-field-07	question:remove array value
+dev	field	dev-field-08	answer:splice mutates
+dev	field	dev-field-09	body:"viewport width"
+dev	field	dev-field-10	title:Abort* timeout
+dev	field	dev-field-11	source:stackoverflow viewport units ios
+dev	field	dev-field-12	tag:html input label
+dev	field	dev-field-13	topic:http redirect 307
+dev	field	dev-field-14	code:"const result"
+dev	field	dev-field-15	heading:"Browser compatibility" bluetooth
+dev	field	dev-field-16	title:aria-live announcements
+dev	field	dev-field-17	question:lighthouse CLS
+dev	field	dev-field-18	answer:JSON.stringify circular
+dev	field	dev-field-19	body:counter-reset CSS
+dev	field	dev-field-20	code:--primary
+dev	field	dev-field-21	source:mdn SVG use href
+dev	field	dev-field-22	tag:css stylesheet media
+dev	field	dev-field-23	topic:dom shadow slot
+dev	field	dev-field-24	heading:Examples clipboard
+dev	field	dev-field-25	title:HTMLDialogElement modal
+test	field	test-field-01	title:Promise.any
+test	field	test-field-02	source:mdn transform matrix
+test	field	test-field-03	tag:javascript temporal date
+test	field	test-field-04	topic:css text overflow
+test	field	test-field-05	heading:Parameters setTimeout
+test	field	test-field-06	code:=> callbacks
+test	field	test-field-07	question:change select element
+test	field	test-field-08	answer:requestSubmit triggers validation
+test	field	test-field-09	body:"writing direction"
+test	field	test-field-10	title:Document* adoption
+test	field	test-field-11	source:stackoverflow table cell width
+test	field	test-field-12	tag:html form inputmode
+test	field	test-field-13	topic:http cache invalidation
+test	field	test-field-14	code:"new URL"
+test	field	test-field-15	heading:"Return value" replaceAll
+test	field	test-field-16	title:aria-describedby relation
+test	field	test-field-17	question:svg clip path
+test	field	test-field-18	answer:localeCompare sorting
+test	field	test-field-19	body:overscroll-behavior CSS
+test	field	test-field-20	code:--foreground
+test	field	test-field-21	source:mdn WebSocket handshake
+test	field	test-field-22	tag:css pseudo element content
+test	field	test-field-23	topic:dom range offset
+test	field	test-field-24	heading:Specifications scroll timeline
+test	field	test-field-25	title:IntersectionObserver visibility
+dev	no-match	dev-no-match-01	zkvaxlurn
+dev	no-match	dev-no-match-02	flornac widget typing CSS
+dev	no-match	dev-no-match-03	mivrozpo pointer sentry
+dev	no-match	dev-no-match-04	qavundrax canvas
+dev	no-match	dev-no-match-05	jinterplexa
+dev	no-match	dev-no-match-06	xaropnem body
+dev	no-match	dev-no-match-07	vulnexo spacer div
+dev	no-match	dev-no-match-08	nonexistentzz browser feature
+dev	no-match	dev-no-match-09	Title of the nineteen hundredth WebAPI version
+dev	no-match	dev-no-match-10	CSS color doznarble
+dev	no-match	dev-no-match-11	aQxrvaZfPn
+dev	no-match	dev-no-match-12	bindlethorn Signal
+dev	no-match	dev-no-match-13	wexovuu Cache
+dev	no-match	dev-no-match-14	bromphle CSS variable
+dev	no-match	dev-no-match-15	novigark flex property
+dev	no-match	dev-no-match-16	kryzzoweb
+dev	no-match	dev-no-match-17	HTML element vworglar
+dev	no-match	dev-no-match-18	indexeeeeeddbeee
+dev	no-match	dev-no-match-19	prxoxtlam
+dev	no-match	dev-no-match-20	CSS foo-a89223x-entropy
+dev	no-match	dev-no-match-21	orbitlurd aria
+dev	no-match	dev-no-match-22	nryxifto request header
+dev	no-match	dev-no-match-23	no such macro splonkaflew
+dev	no-match	dev-no-match-24	lxkptvrza
+dev	no-match	dev-no-match-25	artificial page quzzletone
+test	no-match	test-no-match-01	trynxmaluc
+test	no-match	test-no-match-02	slovrid path observer JavaScript
+test	no-match	test-no-match-03	fenkoquasit text input
+test	no-match	test-no-match-04	qroftivox CSS property
+test	no-match	test-no-match-05	quavivra
+test	no-match	test-no-match-06	kozelplax scroll history
+test	no-match	test-no-match-07	doomedzzxx browser method
+test	no-match	test-no-match-08	kandorbix clipboard type
+test	no-match	test-no-match-09	Future drezliv event declaration
+test	no-match	test-no-match-10	CSS class vnaqtalo
+test	no-match	test-no-match-11	pzMvhdKqbL
+test	no-match	test-no-match-12	blorvak storage quota
+test	no-match	test-no-match-13	skrandeem Notification
+test	no-match	test-no-match-14	alorlogem html tag
+test	no-match	test-no-match-15	praxtoov grid line
+test	no-match	test-no-match-16	uoqrnweb
+test	no-match	test-no-match-17	HTML element dirqxwp
+test	no-match	test-no-match-18	dddaaaatttrrwwwnn
+test	no-match	test-no-match-19	ytrpqldnb
+test	no-match	test-no-match-20	CSS foo-x91495h-lens
+test	no-match	test-no-match-21	aqworp aria-details
+test	no-match	test-no-match-22	nrylxxpo compressed header
+test	no-match	test-no-match-23	unknown macro impollendrix
+test	no-match	test-no-match-24	jgxtqnhxk
+test	no-match	test-no-match-25	artificial page quiznortax
+dev	out-of-domain	dev-out-of-domain-01	treat a houseplant with root rot
+dev	out-of-domain	dev-out-of-domain-02	history of the Byzantine empire
+dev	out-of-domain	dev-out-of-domain-03	hiking boot lacing for heel blisters
+dev	out-of-domain	dev-out-of-domain-04	plan a lunar photography exposure
+dev	out-of-domain	dev-out-of-domain-05	what does a civil engineer do on bridge inspection
+dev	out-of-domain	dev-out-of-domain-06	recipe for steamed broccoli dumplings
+dev	out-of-domain	dev-out-of-domain-07	bird migration north in spring
+dev	out-of-domain	dev-out-of-domain-08	how does a diesel injector work
+dev	out-of-domain	dev-out-of-domain-09	carry skis uphill on packed snow
+dev	out-of-domain	dev-out-of-domain-10	read a cello score in tenor clef
+dev	out-of-domain	dev-out-of-domain-11	renovating a slate roof
+dev	out-of-domain	dev-out-of-domain-12	longest river in Argentina
+dev	out-of-domain	dev-out-of-domain-13	choosing a small aquarium filter
+dev	out-of-domain	dev-out-of-domain-14	binding a linen notebook
+dev	out-of-domain	dev-out-of-domain-15	rules of a three cushion billiards game
+dev	out-of-domain	dev-out-of-domain-16	what causes a solar flare
+dev	out-of-domain	dev-out-of-domain-17	leavening sourdough at high altitude
+dev	out-of-domain	dev-out-of-domain-18	audition tips for musical theatre
+dev	out-of-domain	dev-out-of-domain-19	grading vintage comic books
+dev	out-of-domain	dev-out-of-domain-20	weather patterns over the Andes
+dev	out-of-domain	dev-out-of-domain-21	practicing hand lettering for invitations
+dev	out-of-domain	dev-out-of-domain-22	repair woven rattan furniture
+dev	out-of-domain	dev-out-of-domain-23	ordering of geological rock layers
+dev	out-of-domain	dev-out-of-domain-24	purpose of a windlass on a sailboat
+dev	out-of-domain	dev-out-of-domain-25	topography of the water table
+test	out-of-domain	test-out-of-domain-01	plant bulbs in sandy soil
+test	out-of-domain	test-out-of-domain-02	history of the Mali empire
+test	out-of-domain	test-out-of-domain-03	wax treatment for torn leather boots
+test	out-of-domain	test-out-of-domain-04	how to frame a wide-angle night sky image
+test	out-of-domain	test-out-of-domain-05	selecting a recirculating pump for a pond
+test	out-of-domain	test-out-of-domain-06	recipe for vegetarian paella
+test	out-of-domain	test-out-of-domain-07	butterfly identification by markings
+test	out-of-domain	test-out-of-domain-08	what is the role of a turbo gasket
+test	out-of-domain	test-out-of-domain-09	how to balance on an ice skate
+test	out-of-domain	test-out-of-domain-10	change a mandolin string
+test	out-of-domain	test-out-of-domain-11	restoring old porcelain tile
+test	out-of-domain	test-out-of-domain-12	mountain passes between Nepal and Tibet
+test	out-of-domain	test-out-of-domain-13	feeding baby finches
+test	out-of-domain	test-out-of-domain-14	making a kumihimo bracelet
+test	out-of-domain	test-out-of-domain-15	organizing a petanque tournament
+test	out-of-domain	test-out-of-domain-16	why does a comet have two tails
+test	out-of-domain	test-out-of-domain-17	how to rest laminated dough
+test	out-of-domain	test-out-of-domain-18	techniques for a shadow puppet performance
+test	out-of-domain	test-out-of-domain-19	identify hand-dyed wool
+test	out-of-domain	test-out-of-domain-20	pressure systems over the North Atlantic
+test	out-of-domain	test-out-of-domain-21	practice shading a pencil portrait
+test	out-of-domain	test-out-of-domain-22	repair cracks in cabinet veneer
+test	out-of-domain	test-out-of-domain-23	direction of a continental plate
+test	out-of-domain	test-out-of-domain-24	repair a loose kayak foot brace
+test	out-of-domain	test-out-of-domain-25	how to survey for groundwater

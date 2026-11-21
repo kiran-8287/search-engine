@@ -1,0 +1,35 @@
+mdn_roots:
+  web/api: dom
+  web/javascript: javascript
+  web/css: css
+  web/html: html
+  web/http: http
+  learn_web_development: general-web
+  glossary: general-web
+  web/accessibility: accessibility
+  web/security: security
+  web/performance: performance
+  web/progressive_web_apps: dom
+mdn_exclusions:
+  - /server-side/
+  - /understanding_client-side_tools/client-side_frameworks/
+  - /understanding_client-side_tools/overview/
+  - /glossary/node.js/
+  - /glossary/django/
+  - /glossary/express_js/
+  - /glossary/php/
+  - /glossary/react/
+  - /glossary/angular/
+  - /glossary/vue.js/
+  - /glossary/rails/
+browser_tags:
+  javascript: [javascript, ecmascript-6, web-worker]
+  html: [html, html5, html-input, web-components]
+  css: [css, css-selectors, css-grid, flexbox, css-variables]
+  dom: [dom, fetch-api, xmlhttprequest, service-worker, webassembly, webaudio, canvas, indexeddb, browser, websocket, web-api]
+  accessibility: [accessibility, wai-aria, screen-readers]
+  http: [http, https, http-headers, cors, content-type, caching]
+  security: [content-security-policy, xss, same-origin-policy, csrf]
+  performance: [web-performance, lighthouse, core-web-vitals]
+so_exclusions: [node.js, express, django, flask, php, asp.net, asp.net-core, ruby-on-rails, spring, laravel, reactjs, vue.js, angular, angularjs, jquery, next.js, svelte]
+so_targets: [5000, 20000, 50000]

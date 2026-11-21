@@ -1,0 +1,50 @@
+[
+  {
+    "question_id": 99001,
+    "title": "Fixture query selector question",
+    "url": "https://stackoverflow.com/questions/99001/fixture",
+    "tags": [
+      "javascript",
+      "dom"
+    ],
+    "content_license": "CC BY-SA 4.0",
+    "question_author": "Fixture author",
+    "question_owner_id": 123,
+    "accepted_answer_id": 99002,
+    "segments": [
+      {
+        "type": "paragraph",
+        "text": "Which query selector works with a browser element?"
+      }
+    ],
+    "answers": [
+      {
+        "answer_id": 99002,
+        "url": "https://stackoverflow.com/a/99002",
+        "is_accepted": true,
+        "author": "Fixture answerer",
+        "owner_id": 456,
+        "content_license": "CC BY-SA 4.0",
+        "segments": [
+          {
+            "type": "paragraph",
+            "text": "Select persistent tokens; worker handles should not escape the page."
+          },
+          {
+            "type": "code",
+            "text": "console.log(document.querySelector('#x'));\n"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "99003",
+    "title": "Fixture out of scope",
+    "url": "https://stackoverflow.com/q/99003",
+    "tags": [
+      "rest"
+    ],
+    "content": "Framework database migration."
+  }
+]

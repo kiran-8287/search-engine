@@ -1,0 +1,29 @@
+paths:
+  data: data
+  artifacts: artifacts
+  runtime: data/runtime
+  frontend: frontend
+search:
+  field_weights: {title: 3.0, heading: 1.6, body: 1.0, code: 1.25, question: 1.0, answer: 1.0, tag: 1.4}
+  k1: 1.2
+  b: 0.75
+  mu: 1200
+  rrf_k: 60
+  candidate_depth: 150
+  max_results: 100
+  query_length: 512
+  query_tokens: 80
+  nesting: 12
+  expansion: 20
+  vocabulary_scan: 25000
+  max_query_posting_occurrences: 2500000
+  dense_min_similarity: 0.39
+  dense_unanchored_min_similarity: 0.56
+dense:
+  model: sentence-transformers/all-MiniLM-L6-v2
+  revision: null
+  chunk_tokens: 220
+  overlap_tokens: 28
+  batch_size: 32
+graph: {damping: 0.85, tolerance: 0.00000001, iterations: 100, window: 20, weight: 0.08}
+resources: {seed: 47, max_artifact_bytes: 12000000000, max_dense_bytes: 3000000000, max_dense_passages: 1500000, postings_shard_rows: 350000}

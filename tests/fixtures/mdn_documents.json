@@ -1,0 +1,167 @@
+[
+  {
+    "source_path": "web/javascript/fixture-promise/index.md",
+    "title": "Fixture Promise.all",
+    "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/FixturePromise",
+    "language": "en",
+    "redirects": [
+      "/en-US/docs/Web/JavaScript/OldFixture"
+    ],
+    "segments": [
+      {
+        "segment_id": "mdn-fixture-heading",
+        "type": "heading",
+        "text": "Syntax",
+        "source_anchor": "syntax",
+        "heading_path": [
+          "Syntax"
+        ]
+      },
+      {
+        "type": "paragraph",
+        "text": "Use Promise.all for concurrent tasks. The method querySelector has lexical aliases. They do not make a real phrase. cross",
+        "heading_path": [
+          "Syntax"
+        ],
+        "source_anchor": "syntax"
+      },
+      {
+        "type": "paragraph",
+        "text": "boundary highlighted for fixture only.",
+        "heading_path": [
+          "Syntax"
+        ]
+      },
+      {
+        "segment_id": "mdn-fixture-code",
+        "type": "code",
+        "language": "javascript",
+        "text": "  const result = x === 5;\n  const late = () => Promise.all(items);\n  const tag = '<img src=x onerror=alert(1)>';\n"
+      }
+    ],
+    "link_references": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/FixtureSelector#examples",
+        "anchor_text": "selector"
+      }
+    ],
+    "unresolved_macros": [
+      {
+        "macro_name": "FixtureMacro",
+        "raw": "{{FixtureMacro}}",
+        "label": "FixtureMacro"
+      }
+    ]
+  },
+  {
+    "id": "web/api/fixture-selector/index.md",
+    "title": "Fixture Selectors",
+    "url": "https://developer.mozilla.org/en-US/docs/Web/API/FixtureSelector",
+    "segments": [
+      {
+        "type": "heading",
+        "text": "Examples",
+        "heading_path": [
+          "Examples"
+        ],
+        "source_anchor": "examples"
+      },
+      {
+        "type": "paragraph",
+        "text": "A query selector finds a matching HTML element. Concurrent tasks and examples are independent."
+      },
+      {
+        "type": "code",
+        "text": "  node.querySelector('#item');\n"
+      }
+    ],
+    "outgoing_links": [
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/OldFixture",
+      "http://example.invalid/Case",
+      "https://stackoverflow.com/a/99002"
+    ]
+  },
+  {
+    "id": "web/css/fixture-rem/index.md",
+    "title": "Fixture Font Scale",
+    "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/FixtureFontScale",
+    "content": "CSS units for browser text. fixture legacy content."
+  },
+  {
+    "id": "bad-source",
+    "title": "Invalid fixture",
+    "url": "https://developer.mozilla.org/en-US/docs/Web/"
+  },
+  {
+    "id": "web/css/fixture-page-0/index.md",
+    "title": "Fixturefolio pagination 0",
+    "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/FixturePage0",
+    "content": "Fixturefolio pagination CSS rem ID 0."
+  },
+  {
+    "id": "web/css/fixture-page-1/index.md",
+    "title": "Fixturefolio pagination 1",
+    "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/FixturePage1",
+    "content": "Fixturefolio pagination CSS rem ID 1."
+  },
+  {
+    "id": "web/css/fixture-page-2/index.md",
+    "title": "Fixturefolio pagination 2",
+    "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/FixturePage2",
+    "content": "Fixturefolio pagination CSS rem ID 2."
+  },
+  {
+    "id": "web/css/fixture-page-3/index.md",
+    "title": "Fixturefolio pagination 3",
+    "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/FixturePage3",
+    "content": "Fixturefolio pagination CSS rem ID 3."
+  },
+  {
+    "id": "web/css/fixture-page-4/index.md",
+    "title": "Fixturefolio pagination 4",
+    "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/FixturePage4",
+    "content": "Fixturefolio pagination CSS rem ID 4."
+  },
+  {
+    "id": "web/css/fixture-page-5/index.md",
+    "title": "Fixturefolio pagination 5",
+    "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/FixturePage5",
+    "content": "Fixturefolio pagination CSS rem ID 5."
+  },
+  {
+    "id": "web/css/fixture-page-6/index.md",
+    "title": "Fixturefolio pagination 6",
+    "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/FixturePage6",
+    "content": "Fixturefolio pagination CSS rem ID 6."
+  },
+  {
+    "id": "web/css/fixture-page-7/index.md",
+    "title": "Fixturefolio pagination 7",
+    "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/FixturePage7",
+    "content": "Fixturefolio pagination CSS rem ID 7."
+  },
+  {
+    "id": "web/css/fixture-page-8/index.md",
+    "title": "Fixturefolio pagination 8",
+    "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/FixturePage8",
+    "content": "Fixturefolio pagination CSS rem ID 8."
+  },
+  {
+    "id": "web/css/fixture-page-9/index.md",
+    "title": "Fixturefolio pagination 9",
+    "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/FixturePage9",
+    "content": "Fixturefolio pagination CSS rem ID 9."
+  },
+  {
+    "id": "web/css/fixture-page-10/index.md",
+    "title": "Fixturefolio pagination 10",
+    "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/FixturePage10",
+    "content": "Fixturefolio pagination CSS rem ID 10."
+  },
+  {
+    "id": "web/css/fixture-page-11/index.md",
+    "title": "Fixturefolio pagination 11",
+    "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/FixturePage11",
+    "content": "Fixturefolio pagination CSS rem ID 11."
+  }
+]

@@ -1,0 +1,10 @@
+min_groups_per_split: 300
+classes: [exact-api, operator, natural-language, debugging, css-html, rare, phrase, boolean, fuzzy, field, no-match, out-of-domain]
+pool_depth: 15
+recall_depth: 20
+latency_repeats: 3
+annotation:
+  endpoint: https://api.openai.com/v1/chat/completions
+  model: null
+  prompt_version: techsearch-relevance-v1
+  audit_fraction: 0.15

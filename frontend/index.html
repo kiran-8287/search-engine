@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Search a local corpus of web development documentation and Stack Overflow threads.">
+  <title>TechSearch</title>
+  <link rel="stylesheet" href="/assets/css/site.css">
+  <script type="module" src="/assets/js/search.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to search</a>
+  <header class="header"><div class="frame bar">
+    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>TechSearch</a>
+    <nav aria-label="Primary"><a href="/" aria-current="page">Search</a><a href="/lab">IR Lab <span aria-hidden="true">↗</span></a></nav>
+  </div></header>
+  <main id="main" class="frame">
+    <section class="hero" aria-labelledby="hero-title">
+      <h1 id="hero-title">Search the web<br class="hero-break"> development corpus<span class="accent">.</span></h1>
+      <p>Find MDN documentation and Stack Overflow threads in a local snapshot.</p>
+    </section>
+    <form id="search" class="search-form" role="search">
+      <label class="sr-only" for="query">Search the corpus</label>
+      <div class="search-line">
+        <span class="magnifier" aria-hidden="true"></span>
+        <input id="query" name="q" type="search" placeholder="Try Promise.all, CSS grid, or CORS" maxlength="512" list="completions">
+        <datalist id="completions"></datalist>
+        <button type="submit">Search</button>
+      </div>
+      <div class="filters">
+        <label>Source <select id="source"><option value="">All sources</option><option value="mdn">MDN</option><option value="stackoverflow">Stack Overflow</option></select></label>
+        <label>Topic <select id="topic"><option value="">All topics</option></select></label>
+        <span class="shortcut">Focus search <kbd>/</kbd></span>
+      </div>
+    </form>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <div id="warnings" class="warnings" aria-live="polite"></div>
+    <div id="suggestions" class="suggestions"></div>
+    <section id="results-section" hidden aria-labelledby="results-title" aria-busy="false">
+      <div class="section-bar"><h2 id="results-title">Results</h2><a id="export">Export JSON</a></div>
+      <ol id="results" class="results"></ol>
+      <nav id="pages" class="pages" aria-label="Search pages"></nav>
+      <button id="refine" class="secondary" hidden>Refine with my feedback</button>
+    </section>
+  </main>
+  <footer class="footer"><div class="frame">TechSearch <span>·</span> Documentation and posts retain their source attribution.</div></footer>
+  <dialog id="viewer" aria-labelledby="viewer-title">
+    <div class="dialog-head"><h2 id="viewer-title">Document</h2><form method="dialog"><button class="secondary" aria-label="Close document">Close</button></form></div>
+    <div id="viewer-body" aria-live="polite"></div>
+  </dialog>
+</body>
+</html>

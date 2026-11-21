@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IR Lab · TechSearch</title>
+  <link rel="stylesheet" href="/assets/css/site.css">
+  <script type="module" src="/assets/js/lab.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to experiments</a>
+  <header class="header"><div class="frame bar">
+    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>TechSearch</a>
+    <nav aria-label="Primary"><a href="/">Search</a><a href="/lab" aria-current="page">IR Lab</a></nav>
+  </div></header>
+  <main id="main" class="frame lab">
+    <section class="hero">
+      <h1>Information retrieval lab<span class="accent">.</span></h1>
+      <p>Compare two ranking configurations against the same local snapshot.</p>
+    </section>
+    <form id="compare" class="lab-form">
+      <label class="field-label" for="query">Query</label>
+      <div class="search-line">
+        <span class="magnifier" aria-hidden="true"></span>
+        <input id="query" placeholder="Enter a query to compare" maxlength="512">
+        <button type="submit">Compare</button>
+      </div>
+      <div id="configurations" class="comparison"></div>
+    </form>
+    <p class="status" id="status" role="status"></p>
+    <section id="rankings" class="comparison" aria-label="Ranking comparison"></section>
+    <section class="reports" aria-labelledby="reports-title">
+      <div class="section-bar"><h2 id="reports-title">Index and experiment reports</h2></div>
+      <nav id="report-tabs" class="report-tabs" aria-label="Reports"></nav>
+      <div id="report" class="report" aria-live="polite"></div>
+    </section>
+  </main>
+  <footer class="footer"><div class="frame">TechSearch <span>·</span> Local information retrieval.</div></footer>
+  <dialog id="viewer" aria-labelledby="viewer-title">
+    <div class="dialog-head"><h2 id="viewer-title">Document</h2><form method="dialog"><button class="secondary" aria-label="Close document">Close</button></form></div>
+    <div id="viewer-body" aria-live="polite"></div>
+  </dialog>
+</body>
+</html>
