@@ -109,12 +109,24 @@ def write_csv(path, headings, rows):
             stream.write(line.getvalue().encode("utf-8"))
 
 
+def filesystem_path(path):
+    if os.name != "nt":
+        return path
+    absolute = str(path.absolute())
+    if absolute.startswith("\\\\?\\"):
+        return path
+    if absolute.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + absolute[2:])
+    return Path("\\\\?\\" + absolute)
+
+
 @contextmanager
 def atomic_file(path):
+    path = filesystem_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
-        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}-", delete=False) as file:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".techsearch-", delete=False) as file:
             temporary = Path(file.name)
             yield file
             file.flush()

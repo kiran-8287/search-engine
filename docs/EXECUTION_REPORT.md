@@ -1,5 +1,15 @@
 # Execution report — 2026-11-22
 
+## Windows run
+
+- Python 3.12.16, declared dependencies, CPU PyTorch and Chromium installed successfully. All 37 fixture tests passed after fixes for long archive and embedding cache paths.
+- The interim release from the existing exports reproduced release ID `6f86fc58d97fad8a0c0ec387` on Windows. Deep validation and the offline experiment suite passed. The loopback API returned the MDN `Promise.all` page as its first hit for the scoped title query. IR Lab returned HTTP 200.
+- The pinned MDN revision `df622a2a1c1e9626976cb3c091622d35e799b0cf` yielded 12,650 structured pages and zero parse failures. Browser compatibility metadata and the pinned MiniLM encoder downloaded successfully.
+- Stack Exchange accepted the configured key. Question collection reached the answer-acquisition stage and is saving its checkpoints. Indexing the refreshed MDN snapshot is underway.
+- Windows logs and live smoke-test output are under `artifacts/execution/`. No annotation credentials were loaded and no AI judgments were produced.
+
+## Earlier Linux run
+
 This report records actual execution in the repository on Linux x86_64/glibc 2.28, using Python 3.12. The user selected the existing exports and asked to report acquisition gaps separately. No raw export or completed checkpoint was deleted or replaced; no paid annotation request, publication, push or public deployment occurred.
 
 ## Verified milestones

@@ -1,5 +1,13 @@
 # Work log
 
+## Windows execution on 2026-11-22
+
+- Installed project-local Python 3.12.16, the declared dependencies, CPU PyTorch, and Chromium. Bootstrap and its dependency check passed. The log is at `artifacts/execution/bootstrap-windows.log`.
+- Downloaded the pinned MDN archive. The initial extraction encountered a Windows path-length error. Added extended-length paths, extracted the scoped source files while retaining the full ZIP, and added a regression test. The retry reused the archive and discovered 12,650 scoped pages.
+- Downloaded browser compatibility metadata and the pinned MiniLM encoder. The local encoder smoke test produced two normalized 384-dimensional vectors with a 256-token model limit.
+- The first Windows test suite found a second path-length error in an embedding-cache temporary file. Applied extended paths to atomic writes and cache lookups. The full rerun passed 37 tests, including Chromium. See `artifacts/execution/pytest-windows-retry.log`.
+- Confirmed the collector can load the Stack Exchange key from the workspace environment. Started an isolated lexical build from the original exports so the app can run while fresh collection proceeds. No annotation key was configured.
+
 ## Continued execution: dense release
 
 - User explicitly left AI annotation pending until configuration; no annotation calls authorized or made. Annotation defaults to OpenAI Chat Completions, model null; endpoint/model support environment overrides.

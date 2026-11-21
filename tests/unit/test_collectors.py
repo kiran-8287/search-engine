@@ -1,12 +1,29 @@
 from __future__ import annotations
 
 import json
+import zipfile
 
 import pytest
 import requests
 
 import collect_mdn as mdn
 import collect_stackoverflow as so
+
+
+def test_mdn_scoped_extraction_supports_long_paths(tmp_path):
+    archive = tmp_path / "fixture.zip"
+    long_path = "content-archive/files/en-us/web/api/" + "/".join(["long-" + "x" * 45] * 6) + "/index.md"
+    outside_scope = "content-archive/files/en-us/games/fixture/index.md"
+    with zipfile.ZipFile(archive, "w") as output:
+        output.writestr(long_path, "in scope")
+        output.writestr(outside_scope, "outside scope")
+        output.writestr("content-archive/files/en-us/_redirects.txt", "/source /target\n")
+    destination = tmp_path / "content"
+    mdn.safe_extract_zip(archive, destination, scoped=True)
+    destination = mdn.archive_filesystem_path(destination)
+    assert (destination / long_path).read_text() == "in scope"
+    assert not (destination / outside_scope).exists()
+    assert (destination / "content-archive/files/en-us/_redirects.txt").is_file()
 
 
 def test_mdn_macro_and_code_preservation(tmp_path):
@@ -91,6 +108,74 @@ def test_so_backoff_applies_to_answer_family(api_state, monkeypatch):
     assert waits == []
     assert so.api_get("questions/2/answers").success
     assert waits == [4]
+
+
+def test_so_api_throttle_error_retries_with_server_delay(api_state, monkeypatch):
+    class Throttled(Reply):
+        ok = False
+        status_code = 400
+        headers = {"Retry-After": "12"}
+
+    replies = iter([Throttled(error_id=502, error_message="paused"), Reply(items=[], quota_remaining=500)])
+    waits = []
+    monkeypatch.setattr(so.session, "get", lambda *_args, **_options: next(replies))
+    monkeypatch.setattr(so.time, "sleep", waits.append)
+    assert so.api_get("questions").success
+    assert waits == [12]
+
+
+def test_so_supplement_batches_collect_each_questions_top_votes(api_state, monkeypatch):
+    documents = {"1": {"question_id": 1, "answer_count": 4}, "2": {"question_id": 2, "answer_count": 2}}
+    assert list(so.supplement_batches(documents, ["1", "2"])) == [["1", "2"]]
+    pages = [
+        [{"question_id": 1, "answer_id": 11, "score": 9}, {"question_id": 1, "answer_id": 12, "score": 8},
+         {"question_id": 2, "answer_id": 21, "score": 7}],
+        [{"question_id": 1, "answer_id": 13, "score": 6}, {"question_id": 1, "answer_id": 14, "score": 5},
+         {"question_id": 2, "answer_id": 22, "score": 4}],
+    ]
+    calls = []
+
+    def fetch(endpoint, params, *, page):
+        calls.append((endpoint, page))
+        assert params["sort"] == "votes" and params["order"] == "desc"
+        return so.ApiResult(True, pages[page - 1], page, params["pagesize"], page == 1)
+
+    monkeypatch.setattr(so, "api_get", fetch)
+    monkeypatch.setattr(so.time, "sleep", lambda _seconds: None)
+    completed, count, error = so.lookup_supplement_batch(documents, ["1", "2"])
+    assert (completed, count, error) == ({"1", "2"}, 5, None)
+    assert calls == [("questions/1;2/answers", 1), ("questions/1;2/answers", 2)]
+    assert [answer["answer_id"] for answer in documents["1"]["answers"]] == [11, 12, 13]
+    assert [answer["answer_id"] for answer in documents["2"]["answers"]] == [21, 22]
+
+
+def test_so_question_scope_uses_extracted_text(settings, monkeypatch):
+    monkeypatch.setattr(so, "SCOPE", settings.scope)
+    raw = {"question_id": 55, "title": "Service migration", "tags": ["http"],
+           "body": '<p>See <a href="https://example.invalid/browser">the migration</a>.</p>'}
+    assert so.eligible_question(raw)
+    assert so.scoped_question_document(raw, "http") is None
+    raw["body"] = "<p>The browser sends a preflight request.</p>"
+    assert so.scoped_question_document(raw, "http")["question_id"] == 55
+
+
+def test_so_supplement_keeps_completed_questions_when_quota_stops_batch(api_state, monkeypatch, tmp_path):
+    monkeypatch.setattr(so, "CHECKPOINT_FILE", tmp_path / "checkpoint.json")
+    state = so.load_checkpoint()
+    state["documents"] = {"1": {"question_id": 1, "answer_count": 4}, "2": {"question_id": 2, "answer_count": 2}}
+
+    def fetch(_endpoint, params, *, page):
+        monkeypatch.setattr(so, "STOP_COLLECTION", True)
+        items = [{"question_id": 1, "answer_id": aid} for aid in (11, 12, 13)]
+        items.append({"question_id": 2, "answer_id": 21})
+        return so.ApiResult(True, items, page, params["pagesize"], True, quota_remaining=2)
+
+    monkeypatch.setattr(so, "api_get", fetch)
+    so.collect_additional_answers(state)
+    saved = so.load_checkpoint()
+    assert saved["supplement_question_ids_done"] == ["1"]
+    assert saved["documents"]["2"]["answer_collection"]["additional_answers_status"] == "pending"
+    assert saved["documents"]["2"]["answers"][0]["answer_id"] == 21
 
 
 def test_so_timeout_pauses_after_finite_retries(api_state, monkeypatch):

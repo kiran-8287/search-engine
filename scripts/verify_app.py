@@ -72,7 +72,7 @@ def verify(base, output, executable):
         document = get("/documents/" + hit["id"])
         evidence = hit["evidence"]
         assert evidence and any(segment["ordinal"] == evidence["ordinal"] for segment in document["segments"])
-        assert hit["snippet"] and document["metadata"]["raw_storage"] == "legacy"
+        assert hit["snippet"] and document["metadata"]["raw_storage"] in {"raw", "legacy"}
         # This automated UI/API intervention is not a relevance annotation.
         reply = client.post("/api/v1/feedback", json={"search_id": first["search_id"], "document": hit["id"], "value": 1})
         assert reply.status_code == 204

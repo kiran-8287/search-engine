@@ -2,7 +2,7 @@
 
 TechSearch searches a frozen English corpus of MDN pages and Stack Overflow threads about JavaScript, HTML, CSS, accessibility, browser APIs, HTTP, security, and performance. Each hit is an original page or thread with source excerpts and attribution. The public interface routes searches automatically. The IR Lab exposes all eight modes, ranker settings, explanations, release statistics, and offline experiment reports.
 
-Execution on Linux has produced a validated real lexical release with 7,691 documents. The existing exports are preserved; collection gaps are recorded separately. Dense construction and final release verification are in progress. See [execution results](docs/EXECUTION_REPORT.md), [status](docs/IMPLEMENTATION_STATUS.md), and [the work log](progress/WORK_LOG.md) for measured evidence and remaining work. Windows execution has not been tested.
+Linux and Windows produced the same validated lexical release from the original exports, with 7,691 documents. On Windows, all 37 fixture tests passed, the interim app ran on loopback, and MDN collected 12,650 structured pages from a pinned revision. See [execution results](docs/EXECUTION_REPORT.md), [status](docs/IMPLEMENTATION_STATUS.md), and [the work log](progress/WORK_LOG.md) for collection and release progress.
 
 ## Start with the existing exports
 

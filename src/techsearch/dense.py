@@ -11,7 +11,7 @@ from time import perf_counter
 
 import numpy as np
 
-from .io import ANALYZER_VERSION, CHUNK_VERSION, WorkloadError, atomic_file, digest, file_hash, read_json, write_json
+from .io import ANALYZER_VERSION, CHUNK_VERSION, WorkloadError, atomic_file, digest, file_hash, filesystem_path, read_json, write_json
 from .repository import Documents, Passages, write_indexed_jsonl
 
 
@@ -134,7 +134,7 @@ def build_dense(directory, settings, manifest):
         batch = []
 
         def cache_path(key):
-            return cache_home / key[:2] / f"{key}.npy"
+            return filesystem_path(cache_home / key[:2] / f"{key}.npy")
 
         def valid(vector):
             return vector.shape == (dimension,) and np.isfinite(vector).all() and np.isclose(np.linalg.norm(vector), 1)
