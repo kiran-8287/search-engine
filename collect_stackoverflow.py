@@ -13,6 +13,7 @@ import json
 import os
 import re
 import time
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -50,6 +51,8 @@ SITE = "stackoverflow"
 PAGE_SIZE = 100
 MAX_API_PAGE = 25
 MAX_ANSWERS_PER_QUESTION = 3
+SUPPLEMENT_BATCH_QUESTIONS = 25
+SUPPLEMENT_BATCH_ESTIMATE = 90
 MINIMUM_QUOTA = 5
 MAX_REQUEST_RETRIES = 3
 REQUEST_TIMEOUT = (10, 30)  # Separate connect/read limits, in seconds.
@@ -192,28 +195,39 @@ def api_get(
             except ValueError:
                 payload = None
             backoff_seconds = None
+            error_id = None
+            api_error = False
             if isinstance(payload, dict):
                 value = payload.get("backoff")
                 if type(value) is int and value > 0:
                     backoff_seconds = value
                     ENDPOINT_BACKOFF[family] = time.monotonic() + value
+                try:
+                    REMAINING_QUOTA = int(payload["quota_remaining"])
+                except (KeyError, TypeError, ValueError):
+                    pass
+                api_error = "error_id" in payload
+                if type(payload.get("error_id")) is int:
+                    error_id = payload["error_id"]
+            quota_is_low = REMAINING_QUOTA is not None and REMAINING_QUOTA <= MINIMUM_QUOTA
 
-            if not response.ok:
-                if isinstance(payload, dict) and payload.get("error_message"):
-                    last_error = f"Stack Exchange API error {payload.get('error_id')} (HTTP {response.status_code})"
+            if not response.ok or api_error:
+                if error_id is not None:
+                    last_error = f"Stack Exchange API error {error_id} (HTTP {response.status_code})"
+                elif api_error:
+                    last_error = f"Stack Exchange API error (HTTP {response.status_code})"
                 else:
                     last_error = f"HTTP {response.status_code}"
 
-                retryable = response.status_code in (429, 500, 502, 503, 504)
-                if retryable and attempt < MAX_REQUEST_RETRIES:
-                    retry_after = response.headers.get("Retry-After")
-                    wait_seconds = (
-                        int(retry_after)
-                        if retry_after and retry_after.isdigit()
-                        else min(2 ** attempt, 20)
-                    )
-                    print(f"Temporary API response ({response.status_code}); retrying in {wait_seconds}s.")
+                retryable = error_id in (500, 502, 503) or response.status_code in (429, 500, 502, 503, 504)
+                if retryable and not quota_is_low and attempt < MAX_REQUEST_RETRIES:
+                    retry_after = response.headers.get("Retry-After", "").strip()
+                    header_delay = int(retry_after) if retry_after.isascii() and retry_after.isdigit() else None
+                    supplied_delays = [delay for delay in (header_delay, backoff_seconds) if delay is not None]
+                    wait_seconds = max(supplied_delays, default=60 if error_id == 502 else min(2 ** attempt, 20))
+                    print(f"{last_error}; retrying in {wait_seconds}s.")
                     time.sleep(wait_seconds)
+                    ENDPOINT_BACKOFF.pop(family, None)
                     continue
 
                 STOP_COLLECTION = True
@@ -224,6 +238,7 @@ def api_get(
                     page_size=effective_page_size,
                     has_more=False,
                     quota_remaining=REMAINING_QUOTA,
+                    backoff=backoff_seconds,
                     error=last_error,
                     http_status=last_status,
                 )
@@ -241,21 +256,6 @@ def api_get(
                     http_status=last_status,
                 )
 
-            if "error_id" in payload:
-                last_error = f"Stack Exchange API error {payload.get('error_id')}"
-                STOP_COLLECTION = True
-                return ApiResult(
-                    success=False,
-                    items=[],
-                    page=effective_page,
-                    page_size=effective_page_size,
-                    has_more=False,
-                    quota_remaining=payload.get("quota_remaining", REMAINING_QUOTA),
-                    backoff=payload.get("backoff"),
-                    error=last_error,
-                    http_status=last_status,
-                )
-
             if "items" not in payload or not isinstance(payload["items"], list):
                 STOP_COLLECTION = True
                 return ApiResult(
@@ -264,17 +264,10 @@ def api_get(
                     page=effective_page,
                     page_size=effective_page_size,
                     has_more=False,
-                    quota_remaining=payload.get("quota_remaining", REMAINING_QUOTA),
+                    quota_remaining=REMAINING_QUOTA,
                     error="The API response did not contain a valid 'items' list.",
                     http_status=last_status,
                 )
-
-            quota_value = payload.get("quota_remaining", REMAINING_QUOTA)
-            if quota_value is not None:
-                try:
-                    REMAINING_QUOTA = int(quota_value)
-                except (TypeError, ValueError):
-                    pass
 
             result = ApiResult(
                 success=True,
@@ -289,7 +282,7 @@ def api_get(
 
             # Do not discard this successful page. Stop only subsequent calls;
             # the caller still processes and checkpoints this returned page.
-            if REMAINING_QUOTA is not None and REMAINING_QUOTA <= MINIMUM_QUOTA:
+            if quota_is_low:
                 print(f"\nAPI quota is low ({REMAINING_QUOTA}); no further requests will be started in this run.")
                 STOP_COLLECTION = True
 
@@ -836,6 +829,11 @@ def build_question_document(question: dict[str, Any], category: str) -> dict[str
     }
 
 
+def scoped_question_document(question: dict[str, Any], category: str) -> dict[str, Any] | None:
+    document = build_question_document(question, category)
+    return document if eligible_question(document) else None
+
+
 def creation_windows() -> list[dict[str, int]]:
     today = int(time.time())
     starts = [1217462400]
@@ -875,16 +873,17 @@ def collect_partitioned_questions(state: dict[str, Any], category: str, config: 
                 save_checkpoint(state)
                 return
             for question in result.items:
+                if count >= target:
+                    break
                 qid = str(question.get("question_id", ""))
-                if qid and qid not in documents and eligible_question(question):
-                    if count >= target:
-                        # Keep this page pending so a later increased target
-                        # does not skip items from the rest of the page.
-                        save_checkpoint(state)
-                        return
-                    documents[qid] = build_question_document(question, category)
+                if not qid or qid in documents:
+                    continue
+                document = scoped_question_document(question, category)
+                if document is not None:
+                    documents[qid] = document
                     count += 1
             if count >= target:
+                # Retain this page for a later increase in the category target.
                 save_checkpoint(state)
                 return
             if not result.has_more:
@@ -957,12 +956,15 @@ def collect_questions(state: dict[str, Any]) -> None:
 
                 added = 0
                 for question in result.items:
-                    question_id = str(question.get("question_id", ""))
-                    if not question_id or question_id in documents or not eligible_question(question):
-                        continue
                     if current_count >= target:
                         break
-                    documents[question_id] = build_question_document(question, category)
+                    question_id = str(question.get("question_id", ""))
+                    if not question_id or question_id in documents:
+                        continue
+                    document = scoped_question_document(question, category)
+                    if document is None:
+                        continue
+                    documents[question_id] = document
                     added += 1
                     current_count += 1
 
@@ -1142,57 +1144,125 @@ def collect_accepted_answers(state: dict[str, Any]) -> None:
         time.sleep(REQUEST_DELAY_SECONDS)
 
 
+def supplement_batches(
+    documents: dict[str, dict[str, Any]], question_ids: list[str],
+) -> Iterable[list[str]]:
+    """Group short threads while keeping busy threads in their own requests."""
+    batch: list[str] = []
+    estimated_answers = 0
+    for question_id in question_ids:
+        answer_count = max(1, int(documents[question_id].get("answer_count") or 0))
+        if batch and (
+            len(batch) >= SUPPLEMENT_BATCH_QUESTIONS
+            or estimated_answers + answer_count > SUPPLEMENT_BATCH_ESTIMATE
+        ):
+            yield batch
+            batch = []
+            estimated_answers = 0
+        batch.append(question_id)
+        estimated_answers += answer_count
+    if batch:
+        yield batch
+
+
+def lookup_supplement_batch(
+    documents: dict[str, dict[str, Any]], question_ids: list[str],
+) -> tuple[set[str], int, str | None]:
+    """Read globally vote-sorted pages until each question has its own top answers."""
+    endpoint = f"questions/{';'.join(question_ids)}/answers"
+    single_question = len(question_ids) == 1
+    page_size = MAX_ANSWERS_PER_QUESTION if single_question else PAGE_SIZE
+    seen = {question_id: set() for question_id in question_ids}
+    completed: set[str] = set()
+    added = 0
+    for page in range(1, MAX_API_PAGE + 1):
+        result = api_get(
+            endpoint, {"pagesize": page_size, "order": "desc", "sort": "votes"}, page=page,
+        )
+        if not result.success:
+            return completed, added, result.error or "Unknown API error"
+
+        for question_id in question_ids:
+            if question_id in completed:
+                continue
+            metadata = documents[question_id].setdefault("answer_collection", {})
+            if single_question and page == 1:
+                metadata["additional_answers_page_has_more"] = result.has_more
+            elif not single_question:
+                metadata["additional_answers_batch_has_more"] = result.has_more
+                metadata["additional_answers_batch_size"] = len(question_ids)
+
+        candidates = []
+        for answer in result.items:
+            question_id = str(answer.get("question_id", ""))
+            answer_id = answer.get("answer_id")
+            if question_id not in seen or question_id in completed or answer_id is None:
+                continue
+            answer_id = int(answer_id)
+            if answer_id in seen[question_id]:
+                continue
+            seen[question_id].add(answer_id)
+            candidates.append(answer)
+            if len(seen[question_id]) == MAX_ANSWERS_PER_QUESTION:
+                completed.add(question_id)
+        added += add_answers_to_documents(documents, candidates)
+
+        if not result.has_more:
+            completed.update(question_ids)
+        if STOP_COLLECTION or len(completed) == len(question_ids):
+            break
+        if page < MAX_API_PAGE:
+            time.sleep(REQUEST_DELAY_SECONDS)
+    return completed, added, None
+
+
 def collect_additional_answers(state: dict[str, Any]) -> None:
     documents = state["documents"]
     completed_questions = set(state["supplement_question_ids_done"])
-    question_ids = sorted(documents.keys(), key=lambda value: int(value))
-    pending_ids = [question_id for question_id in question_ids if question_id not in completed_questions]
+    pending_ids = sorted(documents.keys() - completed_questions, key=int)
+    batches = deque(supplement_batches(documents, pending_ids))
+    print(f"\nCollecting additional answers: {len(pending_ids)} questions pending.")
 
-    print(f"\nCollecting additional answers per question: {len(pending_ids)} questions pending.")
+    completed_since_save = 0
+    completed_this_run = 0
+    while batches and not STOP_COLLECTION:
+        question_ids = batches.popleft()
+        completed, added, error = lookup_supplement_batch(documents, question_ids)
+        unfinished = [question_id for question_id in question_ids if question_id not in completed]
+        if len(question_ids) == 1 and unfinished and not STOP_COLLECTION and not error:
+            error = "Answer lookup reached the API page limit."
 
-    for index, question_id in enumerate(pending_ids, start=1):
+        for question_id in question_ids:
+            metadata = documents[question_id].setdefault("answer_collection", {})
+            request_key = f"supplement:{question_id}"
+            if question_id in completed:
+                metadata["additional_answers_status"] = "complete"
+                clear_answer_error(state, request_key)
+            else:
+                metadata["additional_answers_status"] = "pending"
+                if error:
+                    mark_answer_error(state, request_key, error)
+
+        completed_questions.update(completed)
+        state["supplement_question_ids_done"] = sorted(completed_questions, key=int)
+        completed_since_save += len(completed)
+        completed_this_run += len(completed)
+        print(f"  [{completed_this_run}/{len(pending_ids)}] {added} answers added from the latest lookup.")
+        if unfinished and not error and not STOP_COLLECTION:
+            # A busy thread can consume the shared page budget. Retry only
+            # unfinished questions individually to give each its own budget.
+            batches.extendleft([question_id] for question_id in reversed(unfinished))
+        if completed_since_save >= SUPPLEMENT_BATCH_QUESTIONS or not batches or error or STOP_COLLECTION:
+            save_checkpoint(state)
+            completed_since_save = 0
+
+        if error:
+            print(f"  Answer collection paused with {len(unfinished)} questions left pending in the batch: {error}")
+            break
         if STOP_COLLECTION:
             break
-
-        document = documents[question_id]
-        request_key = f"supplement:{question_id}"
-        result = api_get(
-            f"questions/{question_id}/answers",
-            {
-                "page": 1,
-                "pagesize": MAX_ANSWERS_PER_QUESTION,
-                "order": "desc",
-                "sort": "votes",
-            },
-        )
-
-        if not result.success:
-            mark_answer_error(state, request_key, result.error or "Unknown API error")
-            document.setdefault("answer_collection", {})["additional_answers_status"] = "pending"
-            print(f"  [{index}/{len(pending_ids)}] Question {question_id}: failed; left pending ({result.error}).")
-            save_checkpoint(state)
-            # api_get has already exhausted its retry budget. Avoid issuing
-            # thousands of identical failing requests during an outage.
-            print("  Answer collection paused after request failure; rerun to resume.")
-            break
-
-        added = add_answers_to_documents(documents, result.items)
-        # The endpoint sorts this question's own answers. We intentionally
-        # request only the top N candidates needed by the selection policy.
-        completed_questions.add(question_id)
-        state["supplement_question_ids_done"] = sorted(
-            completed_questions,
-            key=lambda value: int(value),
-        )
-        document.setdefault("answer_collection", {})["additional_answers_status"] = "complete"
-        document["answer_collection"]["additional_answers_page_has_more"] = result.has_more
-        clear_answer_error(state, request_key)
-        if index % 25 == 0 or index == len(pending_ids) or STOP_COLLECTION:
-            save_checkpoint(state)
-
-        if index % 25 == 0 or index == len(pending_ids):
-            print(f"  [{index}/{len(pending_ids)}] Latest question {question_id}: {added} answers added.")
-        time.sleep(REQUEST_DELAY_SECONDS)
+        if batches:
+            time.sleep(REQUEST_DELAY_SECONDS)
 
 
 def select_answers(

@@ -5,7 +5,7 @@ import json
 import struct
 from contextlib import contextmanager
 
-from .io import atomic_file, dumps, read_jsonl, write_jsonl
+from .io import atomic_file, dumps, read_jsonl
 
 OFFSET = struct.Struct("<Q")
 CORPUS_FILES = {"documents.jsonl", "documents.offsets", "catalog.jsonl", "aliases.jsonl", "edges.jsonl"}

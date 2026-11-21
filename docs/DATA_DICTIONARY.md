@@ -15,6 +15,8 @@
 | `edges.jsonl` | Unique source and destination integer parents |
 | `data/quarantine/<id>.json` | Source, raw-array offset and a reason for each rejected record |
 
+Historical Windows corpus manifests are embedded in their release manifests under `artifacts/releases/`. Their rejection reports live under `data/quarantine/`, alongside the same corpus IDs. Use the release manifest's source hashes and provenance to identify its retained inputs.
+
 Parent records contain `id` (source stable ID), `doc` (dense ID), `source`, `topic`, `title`, `url`, `tags`, `metadata`, `segments`, `answers`, and `references`. Original collector segment IDs, explicit anchors, headings, source text and language are kept when available. The local `ordinal` is the dense position in its parent. A segment stores `answer_id` for answer evidence and `field` for ranking. References retain normalized targets, unresolved targets, optional anchors, and cited answer or parent identity. Metadata carries original provenance, content/license fields, and available compatibility enrichment.
 
 ### Fixture record

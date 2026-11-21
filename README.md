@@ -2,22 +2,18 @@
 
 TechSearch searches a frozen English corpus of MDN pages and Stack Overflow threads about JavaScript, HTML, CSS, accessibility, browser APIs, HTTP, security, and performance. Each hit is an original page or thread with source excerpts and attribution. The public interface routes searches automatically. The IR Lab exposes all eight modes, ranker settings, explanations, release statistics, and offline experiment reports.
 
-Linux and Windows produced the same validated lexical release from the original exports, with 7,691 documents. On Windows, all 37 fixture tests passed, the interim app ran on loopback, and MDN collected 12,650 structured pages from a pinned revision. See [execution results](docs/EXECUTION_REPORT.md), [status](docs/IMPLEMENTATION_STATUS.md), and [the work log](progress/WORK_LOG.md) for collection and release progress.
+The active release `250a15ecd349951d6c69364c` has 15,345 documents and 197,628 dense passages. It passed release validation on Windows. The separate fixture suite passed 49 tests. See [execution results](docs/EXECUTION_REPORT.md), [status](docs/IMPLEMENTATION_STATUS.md), and [the work log](progress/WORK_LOG.md) for evidence about each release.
 
-## Start with the existing exports
+## Start with the saved release
 
-Run future commands from the repository root. Python 3.11 or 3.12 is required. Bootstrap installs the local project with its CPU encoder, research, and test extras. Use `--lexical-only` to skip the encoder stack. `--no-tests` skips the test extras. Installation requires dependency access or the `--wheelhouse` option pointing to a complete OS-specific wheel directory.
+Run commands from the repository root. Bootstrap is for a fresh Python 3.11 or 3.12 environment. It installs the project with CPU encoder, research, and test extras. Use `--no-tests` to skip the test extras. Installation requires dependency access or a complete OS-specific `--wheelhouse`. With an existing environment, start at the offline readiness check.
 
 ### Windows PowerShell
 
 ```powershell
 py -3.12 scripts/bootstrap.py
 $tsPython = ".\.venv\Scripts\python.exe"
-& $tsPython -m techsearch doctor
-& $tsPython -m techsearch inspect-data
-& $tsPython -m techsearch pipeline --resume --lexical-only
-& $tsPython -m techsearch validate-release --deep
-& $tsPython -m pytest -m "not browser"
+& $tsPython -m techsearch doctor --offline
 & $tsPython scripts/start.py --host 127.0.0.1 --port 8000
 ```
 
@@ -26,15 +22,13 @@ $tsPython = ".\.venv\Scripts\python.exe"
 ```sh
 python3.12 scripts/bootstrap.py
 ts_python=./.venv/bin/python
-"$ts_python" -m techsearch doctor
-"$ts_python" -m techsearch inspect-data
-"$ts_python" -m techsearch pipeline --resume --lexical-only
-"$ts_python" -m techsearch validate-release --deep
-"$ts_python" -m pytest -m 'not browser'
+"$ts_python" -m techsearch doctor --offline
 "$ts_python" scripts/start.py --host 127.0.0.1 --port 8000
 ```
 
 Open Search at `http://127.0.0.1:8000/` and the IR Lab at `http://127.0.0.1:8000/lab`. The active release is selected at process startup. Restart after activating a new release. To exercise the optional browser checks, run `python -m playwright install chromium` in the project environment and then `python -m pytest -m browser`. Those checks use an isolated, synthetic corpus and a loopback server.
+
+To reuse the Chromium installed in this Windows workspace, set `$env:PLAYWRIGHT_BROWSERS_PATH = Join-Path (Get-Location) 'artifacts/tooling/playwright'` before running the browser tests or verification script. The existing `.venv` uses the local interpreter under `artifacts/tooling/python/`.
 
 On Linux hosts that need an OS-installed Chromium, use `python -m pytest tests/browser -m browser --browser-executable=/usr/bin/chromium-browser`. After building a dense release and running its experiments/benchmark, `python scripts/verify_app.py --browser-executable /usr/bin/chromium-browser` checks the running real app, all eight modes, API constraints, pagination, feedback interactions, report charts, and desktop/mobile rendering. It saves screenshots and a JSON report under `artifacts/execution/browser/`. Its automated feedback interaction is separate from benchmark relevance labels.
 
@@ -73,11 +67,12 @@ Run `python -m techsearch search "title:Promise.all" --mode field` for CLI acces
 3. `python -m techsearch benchmark --split dev` saves runs for Auto, BM25, dense, and hybrid. `--ablations` adds TF-IDF, likelihood, graph authority, and MMR, and also exports the four baseline methods as a labeled subset of those same observations. No extra baseline execution is implied.
 4. `python -m techsearch evaluate --split dev` checks pool coverage and publishes metrics when fully judged. To explicitly send blind pooled excerpts to the configured provider, add `--annotate --limit 50` and rerun as needed. The limit counts newly judged candidate pairs. Audit/adjudication can add requests within each pair.
 5. After finalizing settings, use `benchmark --split test --confirm-sealed` and `evaluate --split test --confirm-sealed` for the held-out split. Run the same ablation flags for benchmarking and evaluation. The source catalog is included for reproducibility, so sealing depends on the experimental protocol.
-6. `python -m techsearch package-demo` writes a local presentation archive with the active release, frontend, launch scripts, and pinned encoder when available. Install a Python environment per OS using the appropriate wheelhouse for a disconnected machine. See the [demo run sheet](docs/DEMO_RUN_SHEET.md) and [source notices](docs/ATTRIBUTION.md).
+6. `python -m techsearch package-demo` writes a local presentation archive with the active release, frontend, launch scripts, and pinned encoder when available. Use a separate platform-specific wheelhouse for a disconnected dependency installation. The current archive and Windows offline search evidence are listed in the [demo run sheet](docs/DEMO_RUN_SHEET.md). See also the [source notices](docs/ATTRIBUTION.md).
 
 ## Project references
 
 - [Implementation status](docs/IMPLEMENTATION_STATUS.md)
 - [Storage and data dictionary](docs/DATA_DICTIONARY.md)
 - [Decisions and known limits](docs/DECISIONS.md)
+- [Cleanup and artifact retention](docs/CLEANUP_REPORT.md)
 - [Recent work and resume checkpoint](progress/WORK_LOG.md)

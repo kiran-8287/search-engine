@@ -36,6 +36,18 @@ except ImportError as error:  # Fail clearly instead of silently falling back to
 # 1. CONFIGURATION
 # ============================================================================
 
+def archive_filesystem_path(path: Path) -> Path:
+    """Use extended-length paths for deep MDN archive directories on Windows."""
+    if os.name != "nt":
+        return path
+    absolute = os.path.normpath(path.absolute())
+    if absolute.startswith("\\\\?\\"):
+        return Path(absolute)
+    if absolute.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + absolute[2:])
+    return Path("\\\\?\\" + absolute)
+
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = Path(
     os.getenv("TECHSEARCH_PROJECT_DIR", str(SCRIPT_DIR))
@@ -49,6 +61,7 @@ MDN_ZIP_URL = f"https://github.com/mdn/content/archive/{REVISION}.zip" if REVISI
 DOWNLOAD_DIR = DATA_DIR / "downloads"
 if REVISION:
     DOWNLOAD_DIR = DOWNLOAD_DIR / "mdn" / REVISION
+DOWNLOAD_DIR = archive_filesystem_path(DOWNLOAD_DIR)
 RAW_DIR = DATA_DIR / "raw"
 ZIP_PATH = DOWNLOAD_DIR / "mdn_content.zip"
 EXTRACT_DIR = DOWNLOAD_DIR / "mdn_content"
@@ -83,6 +96,9 @@ if os.getenv("TECHSEARCH_MDN_TOPIC_PATHS"):
     ):
         raise ValueError("Invalid configured MDN source roots.")
     TOPIC_PATHS = tuple(configured_roots)
+if REVISION:
+    scope_key = hashlib.sha256("\n".join(sorted(TOPIC_PATHS)).encode("utf-8")).hexdigest()[:12]
+    EXTRACT_DIR = DOWNLOAD_DIR / f"mdn-source-{scope_key}"
 
 SKIP_HTML_TAGS = {"script", "style", "noscript", "template"}
 BLOCK_CONTAINER_TAGS = {
@@ -134,11 +150,32 @@ def download_mdn() -> None:
     print("MDN download completed.")
 
 
-def safe_extract_zip(zip_path: Path, destination: Path) -> None:
-    """Extract archive members only when their paths remain inside destination."""
+def is_scoped_source_member(path: PurePosixPath) -> bool:
+    parts = path.parts
+    if parts[:2] != ("files", "en-us"):
+        parts = parts[1:]
+    if parts[:2] != ("files", "en-us"):
+        return False
+    source_path = "/".join(parts[2:])
+    return source_path == "_redirects.txt" or (
+        path.name == "index.md" and any(
+            source_path.startswith(root.rstrip("/") + "/") for root in TOPIC_PATHS
+        )
+    )
+
+
+def safe_extract_zip(zip_path: Path, destination: Path, *, scoped: bool = False) -> None:
+    """Validate archive paths and optionally extract only configured English sources."""
+    destination = archive_filesystem_path(destination)
     destination_resolved = destination.resolve()
-    with zipfile.ZipFile(zip_path, "r") as archive:
+    with zipfile.ZipFile(archive_filesystem_path(zip_path), "r") as archive:
+        selected = []
         for member in archive.infolist():
+            path = PurePosixPath(member.filename)
+            if path.is_absolute() or ".." in path.parts or "\\" in member.filename:
+                raise RuntimeError(f"Unsafe path in MDN archive: {member.filename}")
+            if scoped and not is_scoped_source_member(path):
+                continue
             member_path = (destination / member.filename).resolve()
             try:
                 member_path.relative_to(destination_resolved)
@@ -146,7 +183,8 @@ def safe_extract_zip(zip_path: Path, destination: Path) -> None:
                 raise RuntimeError(
                     f"Unsafe path in MDN archive: {member.filename}"
                 ) from error
-        archive.extractall(destination)
+            selected.append(member)
+        archive.extractall(destination, members=selected)
 
 
 def get_mdn_content_root(base: Path | None = None) -> Path | None:
@@ -184,7 +222,7 @@ def extract_mdn() -> None:
         raise ValueError(f"An existing extraction at {EXTRACT_DIR} is incomplete. Preserve it and select a new data directory.")
     with tempfile.TemporaryDirectory(prefix=".mdn-extract-", dir=DOWNLOAD_DIR) as temporary:
         destination = Path(temporary) / "content"
-        safe_extract_zip(ZIP_PATH, destination)
+        safe_extract_zip(ZIP_PATH, destination, scoped=bool(REVISION))
         expected_folder = get_mdn_content_root(destination)
         if expected_folder is None or (REVISION and not expected_folder.parent.parent.name.endswith(REVISION)):
             raise ValueError("Archive layout does not contain the expected MDN English snapshot.")

@@ -69,3 +69,30 @@
 - Added Windows and Linux instructions, setup and launch scripts, local demo packaging, data definitions, and an implementation status table.
 - Activity performed consisted of reading workspace files and editing project files. No installation, external acquisition, model download, generated corpus/release, environment creation, test, benchmark, evaluation, or server launch occurred.
 - Resume with `scripts/bootstrap.py`, `techsearch doctor`, and `inspect-data`. The existing raw files support the offline `pipeline --resume --lexical-only` route. Run deep validation and the fixture checks before full-corpus measurements or acquisition. Use API credentials only for explicit SO collection and AI annotation.
+
+## Verified workspace cleanup on 2026-11-22
+
+- Recorded a clean Git status and audited imports, CLI/API dispatch, frontend assets, release manifests, source hashes and local tooling dependencies.
+- Removed the two duplicate staging roots after preserving their quarantine reports under `data/quarantine/`. Removed the installer caches, duplicate uv ZIP, two unreferenced interim screenshots, and project bytecode and pytest caches. Net logical space reclaimed was 983,828,163 bytes (938.25 MiB).
+- Kept both legacy exports because their raw counterparts have different hashes. Kept both historical releases for their runs and reports, plus the active dense release, encoder, embedding cache, checkpoint, Windows interpreter, Chromium, and verification evidence.
+- Removed two unused imports, shared snapshot lookup between pagination and export, and updated the ignore rules and documentation.
+- The full suite reported 39 passes and the same five collector failures reproduced before the edits. Dependency checks, all 20 import checks, CLI search, verification of 12 encoder files, both archived release checks, and a live Chromium Search and IR Lab smoke check passed. See [cleanup report](../docs/CLEANUP_REPORT.md).
+- Standard and deep validation passed for active release `250a15ecd349951d6c69364c` using the saved corpus, indexes, and passages.
+
+## Collector repair on 2026-11-22
+
+- Reproduced all five collector failures before editing (6 passed, 5 failed). The tests reflected the intended behavior. Kept their assertions.
+- MDN unpacked the full archive and lacked extended-length Windows paths. Restored scoped extraction of configured English Markdown and redirects for pinned revisions, with checksum validation and reuse of the scope-keyed cache. Local fixtures also passed the checks for readable macro labels, reference links and code indentation.
+- Stack Exchange throttle error 502 arrived in an HTTP 400 response and bypassed the retry policy. Classified it as retryable and waited once using the longer server delay when both a numeric `Retry-After` and JSON `backoff` were supplied. Kept the retry limit, endpoint-family cooldown and delivery of successful low-quota pages.
+- Supplemental answers were fetched one question at a time. Added bounded batches and gathered each question's highest-voted distinct answers across shared pages, with individual lookups for unfinished questions at the batch page limit. The accepted-answer lookup and selection policy remain in place.
+- Question scope was checked on raw HTML, where an invisible URL could satisfy the browser-evidence rule. Both admission paths now check extracted document content before counting a question. Fixtures checked link, author and license retention and the ability to replay a page at a higher target.
+- Supplemental answer completion had no per-question bookkeeping within a batch. Successful pages now keep collected answers and completed IDs when quota stops requests. Unfinished IDs stay pending with the existing checkpoint field and stored answers are deduplicated on replay.
+- The focused collector suite passed 16 tests. The full suite passed 49 tests in 26.16 seconds with two dependency deprecation warnings from Starlette TestClient and pytest. Used mocked API responses and local fixtures, including temporary test releases for Chromium. Existing exports, the real checkpoint and project indexes stayed untouched.
+
+## Active release and offline demo on 2026-11-22
+
+- Matched `active.json`, the release manifest, the vector array and the final dense build log. The active Windows release `250a15ecd349951d6c69364c` has 15,345 documents and 197,628 passages. The earlier 42,374-passage build was Linux release `0bc9d95b4db6f1357b62a591` on 7,691 legacy documents. The old Linux dense manifest is absent locally. The process inspection found the running app and no index build.
+- Matched the corpus inputs to the collection manifests. The active release uses refreshed MDN and 2,748 admitted threads from the legacy SO export. The subsequent 5,000-question SO collection is a separate export.
+- Updated the README, implementation status, execution report and demo run sheet. Historical experiment reports remain tied to their lexical release IDs. The saved relevance run reported zero judgments, and annotation credentials and the model are still unconfigured. The 49 fixture passes are recorded separately from release checks and real Chromium evidence.
+- Packaged the active release and its pinned encoder into `artifacts/techsearch-demo-250a15ecd349951d6c69364c.zip` (513,327,888 bytes). Extracted all 87 entries, checked release and encoder integrity, and verified keyword, semantic and hybrid search, evidence, pagination, and an IR Lab comparison through the API. The Python network guard blocked TCP and DNS control probes and recorded zero application socket attempts. The existing Windows environment supplied dependencies. The Visual C++ Redistributable warning appeared and the model loaded successfully. Clean offline installation and testing on other OSes remain open. See [offline demo verification](../artifacts/execution/offline-demo-250a15ecd349951d6c69364c.json).
+- Reran `python -m techsearch validate-release --deep` against the real active release. It exited successfully for `250a15ecd349951d6c69364c`. See the [CLI output](../artifacts/execution/validate-active-dense-windows.json).

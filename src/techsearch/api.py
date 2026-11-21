@@ -101,6 +101,12 @@ def create_app(settings=None):
         except DenseUnavailable as error:
             raise HTTPException(503, str(error)) from error
 
+    def snapshot_for(sid, request, response):
+        try:
+            return service().runtime.get(get_session(request, response), sid)
+        except SnapshotMissing as error:
+            raise HTTPException(404, str(error)) from error
+
     @app.get("/", include_in_schema=False)
     def home():
         return FileResponse(frontend / "index.html")
@@ -133,11 +139,7 @@ def create_app(settings=None):
     @app.get("/api/v1/search/{sid}")
     def search_page(sid: str, request: Request, response: Response,
                     page: int = Query(1, ge=1, le=1000), size: int = Query(10, ge=1, le=25)):
-        try:
-            result = service().runtime.get(get_session(request, response), sid)
-        except SnapshotMissing as error:
-            raise HTTPException(404, str(error)) from error
-        return page_of(result, page, size)
+        return page_of(snapshot_for(sid, request, response), page, size)
 
     @app.get("/api/v1/documents/{stable:path}")
     def document(stable: str, release: str | None = Query(None, pattern=r"^[a-f0-9]{24}$")):
@@ -220,10 +222,7 @@ def create_app(settings=None):
 
     @app.get("/api/v1/exports/search/{sid}")
     def snapshot_export(sid: str, request: Request, response: Response):
-        try:
-            result = service().runtime.get(get_session(request, response), sid)
-        except SnapshotMissing as error:
-            raise HTTPException(404, str(error)) from error
+        result = snapshot_for(sid, request, response)
         response.headers["Content-Disposition"] = 'attachment; filename="techsearch-results.json"'
         return result
 

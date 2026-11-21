@@ -3,8 +3,11 @@
 !.env.example
 .venv/
 __pycache__/
+*.py[cod]
 *.egg-info/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 test-results/
 playwright-report/
 build/
@@ -12,6 +15,7 @@ dist/
 *.log
 *.tmp
 *.part
+.techsearch-*
 .writer.lock
 /mdn_documents.json
 /stackoverflow_documents.json

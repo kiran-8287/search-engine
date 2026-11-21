@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+import hashlib
 import zipfile
 
 import pytest
@@ -24,6 +24,34 @@ def test_mdn_scoped_extraction_supports_long_paths(tmp_path):
     assert (destination / long_path).read_text() == "in scope"
     assert not (destination / outside_scope).exists()
     assert (destination / "content-archive/files/en-us/_redirects.txt").is_file()
+
+
+def test_mdn_pinned_extraction_preserves_archive_provenance(monkeypatch, tmp_path):
+    revision = "a" * 40
+    archive = tmp_path / "fixture.zip"
+    destination = mdn.archive_filesystem_path(tmp_path / "scoped-source")
+    source = f"content-{revision}/files/en-us"
+    with zipfile.ZipFile(archive, "w") as output:
+        output.writestr(f"{source}/web/api/fetch/index.md", "fixture page")
+        output.writestr(f"{source}/web/css/background/index.md", "different topic")
+        output.writestr(f"{source}/_redirects.txt", "/old /new\n")
+    monkeypatch.setattr(mdn, "REVISION", revision)
+    monkeypatch.setattr(mdn, "TOPIC_PATHS", ("web/api",))
+    monkeypatch.setattr(mdn, "DOWNLOAD_DIR", mdn.archive_filesystem_path(tmp_path))
+    monkeypatch.setattr(mdn, "ZIP_PATH", archive)
+    monkeypatch.setattr(mdn, "EXTRACT_DIR", destination)
+
+    mdn.extract_mdn()
+    assert (destination / source / "web" / "api" / "fetch" / "index.md").read_text() == "fixture page"
+    assert (destination / source / "_redirects.txt").is_file()
+    assert not (destination / source / "web" / "css").exists()
+    assert (destination / ".archive-sha256").read_text().strip() == hashlib.sha256(archive.read_bytes()).hexdigest()
+
+    def unexpected_extraction(*_args, **_kwargs):
+        pytest.fail("A pinned extraction with matching provenance should be reused")
+
+    monkeypatch.setattr(mdn, "safe_extract_zip", unexpected_extraction)
+    mdn.extract_mdn()
 
 
 def test_mdn_macro_and_code_preservation(tmp_path):
@@ -124,6 +152,29 @@ def test_so_api_throttle_error_retries_with_server_delay(api_state, monkeypatch)
     assert waits == [12]
 
 
+def test_so_throttle_waits_once_for_the_longer_server_delay(api_state, monkeypatch):
+    class Throttled(Reply):
+        ok = False
+        status_code = 400
+        headers = {"Retry-After": "12"}
+
+    replies = iter([
+        Throttled(error_id=502, backoff=18),
+        Reply(items=[{"answer_id": 11}], backoff=4, quota_remaining=50),
+        Reply(items=[], quota_remaining=49),
+    ])
+    waits = []
+    monkeypatch.setattr(so.session, "get", lambda *_args, **_options: next(replies))
+    monkeypatch.setattr(so.time, "monotonic", lambda: 50)
+    monkeypatch.setattr(so.time, "sleep", waits.append)
+
+    result = so.api_get("questions/1;2/answers")
+    assert result.success and result.items == [{"answer_id": 11}]
+    assert waits == [18]
+    assert so.api_get("questions/3/answers").success
+    assert waits == [18, 4]
+
+
 def test_so_supplement_batches_collect_each_questions_top_votes(api_state, monkeypatch):
     documents = {"1": {"question_id": 1, "answer_count": 4}, "2": {"question_id": 2, "answer_count": 2}}
     assert list(so.supplement_batches(documents, ["1", "2"])) == [["1", "2"]]
@@ -159,6 +210,40 @@ def test_so_question_scope_uses_extracted_text(settings, monkeypatch):
     assert so.scoped_question_document(raw, "http")["question_id"] == 55
 
 
+@pytest.mark.parametrize("target_stage", [5000, 20000], ids=["tag", "partition"])
+def test_so_question_collection_only_counts_extracted_scope(
+    settings, api_state, monkeypatch, tmp_path, target_stage,
+):
+    monkeypatch.setattr(so, "CHECKPOINT_FILE", tmp_path / "checkpoint.json")
+    monkeypatch.setattr(so, "SCOPE", settings.scope)
+    monkeypatch.setattr(so, "TARGET_QUESTIONS", target_stage)
+    monkeypatch.setattr(so, "TOPIC_CONFIG", {"http": {"target": 1, "tags": ["http"]}})
+    items = [
+        {"question_id": 55, "title": "Migration", "tags": ["http"],
+         "body": '<p>See <a href="https://example.invalid/browser">the migration</a>.</p>'},
+        {"question_id": 56, "title": "Preflight", "tags": ["http"],
+         "body": '<p>The browser sends <a href="https://example.invalid/preflight">a preflight</a>.</p>',
+         "owner": {"user_id": 42}, "content_license": "CC BY-SA 4.0"},
+    ]
+
+    def fetch(endpoint, params):
+        assert endpoint == "questions" and params["tagged"] == "http"
+        return so.ApiResult(True, items, params["page"], params["pagesize"], True)
+
+    monkeypatch.setattr(so, "api_get", fetch)
+    so.collect_questions(so.load_checkpoint())
+    saved = so.load_checkpoint()
+    assert list(saved["documents"]) == ["56"]
+    document = saved["documents"]["56"]
+    assert document["question_owner_id"] == 42
+    assert document["content_license"] == "CC BY-SA 4.0"
+    assert document["link_references"][0]["url"] == "https://example.invalid/preflight"
+    if target_stage == 5000:
+        assert "http" not in saved["tag_pages"]
+    else:
+        assert saved["question_windows"]["balanced:http:http"][0]["page"] == 1
+
+
 def test_so_supplement_keeps_completed_questions_when_quota_stops_batch(api_state, monkeypatch, tmp_path):
     monkeypatch.setattr(so, "CHECKPOINT_FILE", tmp_path / "checkpoint.json")
     state = so.load_checkpoint()
@@ -176,6 +261,40 @@ def test_so_supplement_keeps_completed_questions_when_quota_stops_batch(api_stat
     assert saved["supplement_question_ids_done"] == ["1"]
     assert saved["documents"]["2"]["answer_collection"]["additional_answers_status"] == "pending"
     assert saved["documents"]["2"]["answers"][0]["answer_id"] == 21
+
+
+def test_so_supplement_retries_only_unfinished_questions_at_batch_page_limit(api_state, monkeypatch, tmp_path):
+    monkeypatch.setattr(so, "CHECKPOINT_FILE", tmp_path / "checkpoint.json")
+    monkeypatch.setattr(so, "MAX_API_PAGE", 1)
+    monkeypatch.setattr(so.time, "sleep", lambda _seconds: None)
+    state = so.load_checkpoint()
+    state["documents"] = {
+        "1": {"question_id": 1, "answer_count": 4},
+        "2": {"question_id": 2, "answer_count": 2},
+        "3": {"question_id": 3, "answer_count": 1},
+    }
+    state["supplement_question_ids_done"] = ["3"]
+    calls = []
+
+    def fetch(endpoint, params, *, page):
+        calls.append((endpoint, page))
+        if endpoint == "questions/1;2/answers":
+            assert params["pagesize"] == so.PAGE_SIZE
+            items = [{"question_id": 1, "answer_id": aid} for aid in (11, 12, 13)]
+            items.append({"question_id": 2, "answer_id": 21})
+            return so.ApiResult(True, items, page, params["pagesize"], True)
+        assert endpoint == "questions/2/answers"
+        assert params["pagesize"] == so.MAX_ANSWERS_PER_QUESTION
+        items = [{"question_id": 2, "answer_id": aid} for aid in (21, 22)]
+        return so.ApiResult(True, items, page, params["pagesize"], False)
+
+    monkeypatch.setattr(so, "api_get", fetch)
+    so.collect_additional_answers(state)
+    saved = so.load_checkpoint()
+    assert calls == [("questions/1;2/answers", 1), ("questions/2/answers", 1)]
+    assert saved["supplement_question_ids_done"] == ["1", "2", "3"]
+    assert [answer["answer_id"] for answer in saved["documents"]["2"]["answers"]] == [21, 22]
+    assert saved["documents"]["2"]["answer_collection"]["additional_answers_page_has_more"] is False
 
 
 def test_so_timeout_pauses_after_finite_retries(api_state, monkeypatch):
