@@ -25,7 +25,7 @@ def package_demo(settings, release, output=None):
     for section in ("config", "docs", "frontend", "scripts", "src"):
         for source in sorted((root / section).rglob("*")):
             relative = source.relative_to(root)
-            if (source.is_file() and source.suffix in {".py", ".yaml", ".tsv", ".html", ".css", ".js", ".md"}
+            if (source.is_file() and source.suffix in {".py", ".yaml", ".tsv", ".html", ".css", ".js", ".md", ".ico"}
                     and not any(name.startswith(".") or name == "__pycache__" for name in relative.parts)):
                 entries[relative.as_posix()] = source
     release_prefix = f"artifacts/releases/{release.id}"

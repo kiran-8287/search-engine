@@ -35,19 +35,23 @@ export function link(label, url) {
 }
 
 export async function api(path, { body, signal } = {}) {
-  const response = await fetch("/api/v1" + path, {
-    method: body ? "POST" : "GET",
-    headers: body ? { "Content-Type": "application/json" } : {},
-    body: body ? JSON.stringify(body) : undefined,
-    signal,
-  });
+  const request = { method: "GET", signal };
+  if (body) {
+    request.method = "POST";
+    request.headers = { "Content-Type": "application/json" };
+    request.body = JSON.stringify(body);
+  }
+  const response = await fetch("/api/v1" + path, request);
   if (response.status === 204) return undefined;
   const value = await response.json().catch(() => null);
   if (!response.ok || value === null) {
     const detail = value?.detail;
-    const message = typeof detail === "string" ? detail :
-      Array.isArray(detail) ? detail.map((item) => item.msg).join(". ") :
-      "The search service returned an unexpected response.";
+    let message = "The search service returned an unexpected response.";
+    if (typeof detail === "string") {
+      message = detail;
+    } else if (Array.isArray(detail)) {
+      message = detail.map((item) => item.msg).join(". ");
+    }
     const error = new Error(message);
     error.status = response.status;
     throw error;
@@ -165,6 +169,21 @@ function feedbackControl(hit, judge, vote) {
   return menu;
 }
 
+function resultSnippet(hit) {
+  const text = el("p", null, "snippet");
+  let content = text;
+  if (hit.evidence?.field === "code") {
+    text.classList.add("is-code");
+    content = el("code");
+    text.append(content);
+  }
+  for (const piece of hit.snippet || []) {
+    const node = piece.match ? el("mark", piece.text) : document.createTextNode(piece.text);
+    content.append(node);
+  }
+  return text;
+}
+
 export function resultItem(hit, { lab = false, judge, vote, preview } = {}) {
   const row = el("li", null, "result");
   const header = el("div", null, "result-header");
@@ -183,15 +202,7 @@ export function resultItem(hit, { lab = false, judge, vote, preview } = {}) {
 
   const heading = el(lab ? "h3" : "h2", null, "result-title");
   heading.append(link(hit.title, hit.url));
-  const text = el("p", null, "snippet" + (hit.evidence?.field === "code" ? " is-code" : ""));
-  for (const piece of hit.snippet || []) {
-    text.append(piece.match ? el("mark", piece.text) : document.createTextNode(piece.text));
-  }
-  if (hit.evidence?.field === "code") {
-    const code = el("code");
-    code.append(...text.childNodes);
-    text.append(code);
-  }
+  const text = resultSnippet(hit);
   const metadata = el("div", null, "result-meta");
   if (lab) metadata.append(el("span", "#" + hit.rank + " · " + hit.score.toFixed(5), "technical"));
   if (hit.source === "stackoverflow") {
@@ -233,6 +244,14 @@ function sourceSections(segments) {
     group.segments.push(segment);
   }
   return groups;
+}
+
+function sourceBlock(segment) {
+  if (segment.field !== "code") return el("p", segment.text);
+  const pre = el("pre");
+  pre.tabIndex = 0;
+  pre.append(el("code", segment.text));
+  return pre;
 }
 
 export function createPreview({ sidebar = false } = {}) {
@@ -304,16 +323,22 @@ export function createPreview({ sidebar = false } = {}) {
     body.replaceChildren(detail, excerpt);
 
     let headings = [];
-    function select(group, match) {
+    function select(group, useMatchedEvidence) {
       excerpt.replaceChildren();
-      const ordinal = match ? hit.evidence?.ordinal : undefined;
+      const ordinal = useMatchedEvidence ? hit.evidence?.ordinal : undefined;
       const index = Math.max(0, group?.segments.findIndex((segment) => segment.ordinal === ordinal) ?? 0);
       const segment = group?.segments[index];
       const answer = group?.answerId == null ? null : data.answers?.find((item) => item.answer_id === group.answerId);
       detail.textContent = "Source excerpt" + (segment?.field === "code" ? " · Code" : "");
       if (answer?.is_accepted === true) detail.append(el("span", " · Accepted answer", "accepted"));
-      const target = match ? hit.evidence?.url :
-        answer?.url || (segment?.source_anchor ? data.url.split("#")[0] + "#" + encodeURIComponent(segment.source_anchor) : data.url);
+      let target = data.url;
+      if (useMatchedEvidence) {
+        target = hit.evidence?.url;
+      } else if (answer?.url) {
+        target = answer.url;
+      } else if (segment?.source_anchor) {
+        target = data.url.split("#")[0] + "#" + encodeURIComponent(segment.source_anchor);
+      }
       setFooter(target || data.url || hit.url, answer || data.metadata || hit);
       headings.forEach(([button, section]) => {
         if (section === group) button.setAttribute("aria-current", "location");
@@ -327,12 +352,7 @@ export function createPreview({ sidebar = false } = {}) {
       const start = segment?.field === "code" ? Math.max(0, index - 1) : index;
       for (const item of group.segments.slice(start, index + 3)) {
         if (item.field === "heading" && item.text === group.label) continue;
-        if (item.field === "code") {
-          const pre = el("pre");
-          pre.tabIndex = 0;
-          pre.append(el("code", item.text));
-          excerpt.append(pre);
-        } else excerpt.append(el("p", item.text));
+        excerpt.append(sourceBlock(item));
       }
     }
 

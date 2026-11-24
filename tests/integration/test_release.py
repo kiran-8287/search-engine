@@ -86,6 +86,18 @@ def test_missing_release_keeps_ui_alive_and_returns_actionable_error(settings):
         assert client.post("/api/v1/search", json={"query": "CSS"}).status_code == 503
 
 
+def test_frontend_favicon_is_available_without_a_release(settings):
+    with TestClient(create_app(settings)) as client:
+        for route in ("/", "/lab"):
+            assert '<link rel="icon" href="/assets/favicon.ico"' in client.get(route).text
+        asset = client.get("/assets/favicon.ico")
+        assert asset.status_code == 200
+        assert asset.content.startswith(bytes.fromhex("000001000200"))
+        fallback = client.get("/favicon.ico")
+        assert fallback.status_code == 200
+        assert fallback.content == asset.content
+
+
 def test_search_modes_and_constraints(service):
     assert ids(service.search("source:mdn AND title:Promise.all", mode="boolean")) == [PROMISE]
     assert ids(service.search('"query selector"', mode="phrase", source="mdn")) == [SELECTOR]
@@ -238,6 +250,35 @@ def test_ablation_export_preserves_actual_baseline_observations(service):
         assert baseline["timing_ms"].get(method) == full["timing_ms"].get(method)
 
 
+def test_lab_report_archive_is_explicit_and_validates_attribution(settings, release):
+    from types import SimpleNamespace
+
+    from techsearch.experiments import save_report
+
+    archived = SimpleNamespace(id="a" * 24)
+    save_report(settings, archived, "benchmark-dev", {"split": "dev", "release_id": archived.id, "repeats": 4})
+    save_report(settings, archived, "benchmark-test", {"split": "dev", "release_id": archived.id})
+    save_report(settings, archived, "latent", {"release_id": release.id})
+    with TestClient(create_app(settings)) as client:
+        inventory = client.get("/api/v1/report-inventory").json()
+        assert inventory["active_release_id"] == release.id
+        assert inventory["releases"][archived.id] == {
+            "benchmark-dev": "available", "benchmark-test": "invalid", "latent": "invalid",
+        }
+        assert client.get("/api/v1/reports/benchmark-dev").json() == {
+            "name": "benchmark-dev", "status": "not-run", "release_id": release.id,
+        }
+        assert client.get("/api/v1/benchmarks/dev", params={"release": archived.id}).json()["report"]["repeats"] == 4
+        assert client.get("/api/v1/reports/graph").json()["status"] == "available"
+        assert client.get("/api/v1/reports/graph", params={"release": archived.id}).json()["status"] == "not-run"
+        assert client.get("/api/v1/benchmarks/test", params={"release": archived.id}).status_code == 409
+        assert client.get("/api/v1/reports/latent", params={"release": archived.id}).status_code == 409
+        assert client.get("/api/v1/reports/latent", params={"release": "../invalid"}).status_code == 422
+        export = client.get("/api/v1/exports/reports/benchmark-dev", params={"release": archived.id})
+        assert export.json()["release_id"] == archived.id
+        assert f"benchmark-dev-{archived.id}.json" in export.headers["Content-Disposition"]
+
+
 def test_demo_bundle_keeps_saved_reports_and_portable_paths(settings, release, tmp_path):
     import shutil
     from pathlib import Path
@@ -255,6 +296,7 @@ def test_demo_bundle_keeps_saved_reports_and_portable_paths(settings, release, t
     bundle = package_demo(settings, release, tmp_path / "demo.zip")
     with ZipFile(bundle["bundle"]) as archive:
         assert f"artifacts/reports/{release.id}/retrieval.json" in archive.namelist()
+        assert "frontend/assets/favicon.ico" in archive.namelist()
         assert ".env" not in archive.namelist()
         paths = yaml.safe_load(archive.read("config/default.yaml"))["paths"]
         assert paths == {"data": "data", "artifacts": "artifacts", "runtime": "data/runtime", "frontend": "frontend"}

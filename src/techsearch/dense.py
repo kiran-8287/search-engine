@@ -79,32 +79,47 @@ def load_encoder(settings, manifest, verify=False):
     return model
 
 
+def passage_segments(documents):
+    """Yield searchable segments in document order, skipping tag labels."""
+    for document in documents:
+        for segment in document["segments"]:
+            if segment["field"] != "tag":
+                yield document["doc"], segment
+
+
+def section_key(row):
+    document_id, segment = row
+    headings = tuple(segment.get("heading_path", []))
+    # Give titles and code their own group even when the heading path agrees.
+    boundary = segment["ordinal"] if segment["field"] in {"code", "title"} else -1
+    return document_id, segment.get("answer_id"), headings, boundary
+
+
 def chunk_rows(documents, tokenizer, limit, overlap):
-    """Group adjacent prose within a section and keep code and answers separate."""
-    ordered = ((document["doc"], segment) for document in documents for segment in document["segments"] if segment["field"] != "tag")
-    def section(row):
-        parent, segment = row
-        return (parent, segment.get("answer_id"), tuple(segment.get("heading_path", [])),
-                segment["ordinal"] if segment["field"] in {"code", "title"} else -1)
-    for (parent, answer, _headings, _boundary), rows in groupby(ordered, key=section):
-        items = [segment for _, segment in rows]
-        text = "\n\n".join(row["text"] for row in items)
+    """Yield overlapping token windows with their parent IDs and source spans."""
+    for (parent, answer, _headings, _boundary), rows in groupby(passage_segments(documents), key=section_key):
+        segments = [segment for _, segment in rows]
+        text = "\n\n".join(segment["text"] for segment in segments)
         spans = []
         offset = 0
-        for row in items:
-            end = offset + len(row["text"])
-            spans.append((offset, end, row["ordinal"]))
+        for segment in segments:
+            end = offset + len(segment["text"])
+            spans.append((offset, end, segment["ordinal"]))
             offset = end + 2
         offsets = tokenizer(text, add_special_tokens=False, truncation=False, return_offsets_mapping=True, verbose=False)["offset_mapping"]
-        start = 0
+        first_token = 0
         span_index = 0
-        while start < len(offsets):
-            stop = min(start + limit, len(offsets))
-            left = offsets[start][0]
-            right = offsets[stop - 1][1]
-            while stop > start + 1 and len(tokenizer(text[left:right], add_special_tokens=False, verbose=False)["input_ids"]) > limit:
-                stop -= 1
-                right = offsets[stop - 1][1]
+        while first_token < len(offsets):
+            past_last_token = min(first_token + limit, len(offsets))
+            left = offsets[first_token][0]
+            right = offsets[past_last_token - 1][1]
+            # A sliced word can tokenize differently without its original context.
+            while past_last_token > first_token + 1:
+                window_tokens = tokenizer(text[left:right], add_special_tokens=False, verbose=False)["input_ids"]
+                if len(window_tokens) <= limit:
+                    break
+                past_last_token -= 1
+                right = offsets[past_last_token - 1][1]
             while span_index + 1 < len(spans) and spans[span_index][1] <= left:
                 span_index += 1
             relevant = []
@@ -113,9 +128,9 @@ def chunk_rows(documents, tokenizer, limit, overlap):
                     break
                 relevant.append([ordinal, max(0, left - span_left), min(right, span_right) - span_left])
             yield parent, answer, relevant, text[left:right]
-            if stop == len(offsets):
+            if past_last_token == len(offsets):
                 break
-            start = max(start + 1, stop - overlap)
+            first_token = max(first_token + 1, past_last_token - overlap)
 
 
 def build_dense(directory, settings, manifest):
@@ -201,32 +216,40 @@ class Dense:
         self.vectors, self.parents = self.passages.vectors, self.passages.parents
 
     def rank(self, text, eligible, cutoff, depth):
+        """Encode the query locally and return the highest-scoring eligible parents."""
         started = perf_counter()
         if not eligible:
             return [], {"passages_scored": 0, "seconds": perf_counter() - started}
         tokens = self.model.tokenizer(text, add_special_tokens=True, truncation=False, verbose=False)["input_ids"]
         if len(tokens) > self.model.max_seq_length:
             raise WorkloadError("The query exceeds the local encoder token budget. Use fewer terms.")
-        q = np.asarray(self.model.encode(text, convert_to_numpy=True, normalize_embeddings=True, show_progress_bar=False), dtype=np.float32)
-        rows, visited = exact_parent_hits(self.vectors, self.parents, q, eligible, cutoff, depth)
+        query_vector = self.model.encode(text, convert_to_numpy=True, normalize_embeddings=True, show_progress_bar=False)
+        query_vector = np.asarray(query_vector, dtype=np.float32)
+        rows, visited = exact_parent_hits(self.vectors, self.parents, query_vector, eligible, cutoff, depth)
         return rows, {"passages_scored": visited, "cutoff": cutoff, "seconds": perf_counter() - started}
 
 
 def exact_parent_hits(vectors, parents, query, eligible, cutoff, depth):
+    """Score eligible passages in blocks and keep one best passage per parent."""
     mask = np.isin(parents, np.asarray(sorted(eligible), dtype=np.uint32))
-    best = {}
+    best_by_parent = {}
     visited = 0
-    for start in range(0, len(mask), 4096):
-        indices = np.flatnonzero(mask[start:start + 4096]) + start
-        if indices.size == 0:
+    block_size = 4096
+    for start in range(0, len(mask), block_size):
+        passage_ids = np.flatnonzero(mask[start:start + block_size]) + start
+        if passage_ids.size == 0:
             continue
-        similarity = vectors[indices] @ query
-        visited += len(indices)
+        similarity = vectors[passage_ids] @ query
+        visited += len(passage_ids)
         matches = similarity >= cutoff
-        for index, score in zip(indices[matches], similarity[matches]):
-            parent = int(parents[index])
+        for passage_id, score in zip(passage_ids[matches], similarity[matches]):
+            parent_id = int(parents[passage_id])
             score = float(score)
-            if parent not in best or score > best[parent][0]:
-                best[parent] = (score, int(index))
-    ordered = sorted(best.items(), key=lambda item: (-item[1][0], item[0]))[:depth]
-    return [(doc, score, [("passage", row, score)]) for doc, (score, row) in ordered], visited
+            previous = best_by_parent.get(parent_id)
+            # Keep the first passage when two passages of a parent tie.
+            if previous is None or score > previous[0]:
+                best_by_parent[parent_id] = (score, int(passage_id))
+    ordered = sorted(best_by_parent.items(), key=lambda item: (-item[1][0], item[0]))[:depth]
+    hits = [(parent_id, score, [("passage", passage_id, score)])
+            for parent_id, (score, passage_id) in ordered]
+    return hits, visited

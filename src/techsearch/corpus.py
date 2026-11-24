@@ -235,10 +235,61 @@ def refs(record):
     if isinstance(references, list) and references:
         return references
     urls = record.get("outgoing_links")
-    return [{"url": value} for value in urls if isinstance(value, str)] if isinstance(urls, list) else []
+    if not isinstance(urls, list):
+        return []
+    return [{"url": value} for value in urls if isinstance(value, str)]
+
+
+def build_aliases(parents, source_paths):
+    """Map URL variants to assigned document IDs and remove ambiguous aliases."""
+    aliases = {alias_key(parent["url"]): document_id for document_id, parent in enumerate(parents)}
+    canonical_keys = set(aliases)
+    ambiguous = set()
+    for document_id, parent in enumerate(parents):
+        variants = list(parent["aliases"])
+        if parent["source"] == "mdn":
+            source_path = parent["id"].removeprefix("mdn:")
+            source_slug = quote(source_path.removesuffix("/index.md"), safe="/")
+            variants.append(f"https://{MDN}/en-US/docs/{source_slug}")
+            if source_path in source_paths:
+                variants.append(source_paths[source_path])
+        for variant in variants:
+            normalized = url(variant, parent["url"])
+            if not normalized:
+                continue
+            key = alias_key(normalized)
+            if aliases.setdefault(key, document_id) != document_id:
+                ambiguous.add(key)
+
+    for source_path, target in source_paths.items():
+        normalized = url(target)
+        destination = aliases.get(alias_key(normalized)) if normalized else None
+        if destination is not None and isinstance(source_path, str):
+            key = f"mdn:/en-us/docs/{source_path.removesuffix('/index.md').casefold()}"
+            if aliases.setdefault(key, destination) != destination:
+                ambiguous.add(key)
+    # The canonical URL stays available even if a redirect conflicts with it.
+    for key in ambiguous - canonical_keys:
+        del aliases[key]
+    return aliases, ambiguous
+
+
+def parent_references(parent, aliases):
+    """Yield source references with the answer and local destination, if available."""
+    entities = [(None, parent["metadata"]), *parent["answers"].items()]
+    for answer_id, entity in entities:
+        base = entity.get("url") or parent["url"]
+        for reference in refs(entity):
+            if not isinstance(reference, dict):
+                continue
+            target = url(reference.get("url"), base)
+            if target:
+                destination = aliases.get(alias_key(target))
+                yield {**reference, "url": target, "answer_id": answer_id, "target_doc": destination}
 
 
 def build_corpus(path, settings):
+    """Admit and deduplicate source parents, then write the canonical lookup files."""
     rejected, parents = [], []
     observed, macros, availability, legacy_counts = Counter(), Counter(), Counter(), Counter()
     macro_affected = Counter()
@@ -255,10 +306,13 @@ def build_corpus(path, settings):
             try:
                 parent = normalize(record, source, settings.scope)
                 dumps(parent)
+                content = [(segment["field"], segment["text"]) for segment in parent["segments"]
+                           if segment["field"] not in {"title", "tag"}]
                 identities = {"id": parent["id"], "url": alias_key(parent["url"]),
-                              "text": digest([source, [(s["field"], s["text"]) for s in parent["segments"]
-                                                       if s["field"] not in {"title", "tag"}]])}
-                if any(identity in seen[key] for key, identity in identities.items()) or seen["answers"].intersection(parent["answers"]):
+                              "text": digest([source, content])}
+                duplicate_parent = any(identity in seen[key] for key, identity in identities.items())
+                duplicate_answer = seen["answers"].intersection(parent["answers"])
+                if duplicate_parent or duplicate_answer:
                     raise ValueError("Duplicate ID, canonical URL, exact content, or answer")
                 for key, identity in identities.items():
                     seen[key].add(identity)
@@ -298,31 +352,7 @@ def build_corpus(path, settings):
     inventory = read_json(mdn_report_path) if mdn_report_path.is_file() else {}
     compat_matches = set()
     parents.sort(key=lambda item: item["id"])
-    aliases = {alias_key(parent["url"]): index for index, parent in enumerate(parents)}
-    ambiguous = set()
-    for index, parent in enumerate(parents):
-        variants = list(parent["aliases"])
-        if parent["source"] == "mdn":
-            source_path = parent["id"].removeprefix("mdn:")
-            variants.append(f"https://{MDN}/en-US/docs/" + quote(source_path.removesuffix("/index.md"), safe="/"))
-            if source_path in mapping:
-                variants.append(mapping[source_path])
-        for variant in variants:
-            normalized = url(variant, parent["url"])
-            if normalized:
-                key = alias_key(normalized)
-                if aliases.setdefault(key, index) != index:
-                    ambiguous.add(key)
-    for source_path, target in mapping.items():
-        normalized = url(target)
-        destination = aliases.get(alias_key(normalized)) if normalized else None
-        if destination is not None and isinstance(source_path, str):
-            key = f"mdn:/en-us/docs/{source_path.removesuffix('/index.md').casefold()}"
-            if aliases.setdefault(key, destination) != destination:
-                ambiguous.add(key)
-    canonical_keys = {alias_key(parent["url"]) for parent in parents}
-    for key in ambiguous - canonical_keys:
-        del aliases[key]
+    aliases, ambiguous = build_aliases(parents, mapping)
 
     edges = set()
     unresolved = 0
@@ -330,7 +360,7 @@ def build_corpus(path, settings):
 
     def records():
         nonlocal unresolved
-        for index, parent in enumerate(parents):
+        for document_id, parent in enumerate(parents):
             metadata = parent["metadata"]
             key = alias_key(parent["url"])
             if key in compat_urls:
@@ -343,23 +373,18 @@ def build_corpus(path, settings):
                         (feature.get("status") or {}).get(flag) is True for feature in compatibility
                     )
             record = {key: parent[key] for key in ("id", "source", "topic", "title", "url", "tags", "metadata")}
-            record["doc"] = index
+            record["doc"] = document_id
             record["segments"] = [{**segment, "ordinal": ordinal} for ordinal, segment in enumerate(parent["segments"])]
             record["answers"] = [{"answer_id": answer_id, **answer} for answer_id, answer in sorted(parent["answers"].items())]
             record["references"] = []
-            for answer_id, entity in [(None, metadata), *parent["answers"].items()]:
-                for reference in refs(entity):
-                    if not isinstance(reference, dict):
-                        continue
-                    target = url(reference.get("url"), entity.get("url") or parent["url"])
-                    if target:
-                        destination = aliases.get(alias_key(target))
-                        record["references"].append({**reference, "url": target, "answer_id": answer_id, "target_doc": destination})
-                        if destination is None:
-                            unresolved += 1
-                        elif destination != index:
-                            edges.add((index, destination))
-            catalog.append({"doc": index, "stable": parent["id"], **{
+            for reference in parent_references(parent, aliases):
+                record["references"].append(reference)
+                destination = reference["target_doc"]
+                if destination is None:
+                    unresolved += 1
+                elif destination != document_id:
+                    edges.add((document_id, destination))
+            catalog.append({"doc": document_id, "stable": parent["id"], **{
                 key: parent[key] for key in ("source", "topic", "title", "url", "tags")
             }})
             yield record

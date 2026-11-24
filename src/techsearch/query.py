@@ -179,6 +179,7 @@ def positives(node, negated=False):
 
 
 def parse(text, mode, settings, topics):
+    """Separate hard constraints from the terms used for scoring."""
     if len(text) > settings["query_length"]:
         raise QueryError(f"Use at most {settings['query_length']} characters.")
     tokens = lex(text, settings["query_tokens"])
@@ -191,22 +192,24 @@ def parse(text, mode, settings, topics):
             raise QueryError("Join Boolean operands with uppercase AND or OR.")
         scoring = tuple(positives(root))
         return Parsed(root, scoring, " ".join(atom.value for atom in scoring), tokens)
-    meaningful = []
-    for tok in tokens:
-        if tok.kind in ("(", ")"):
+    atoms = []
+    for token in tokens:
+        if token.kind in ("(", ")"):
             continue
-        token = Lexeme("word", tok.value) if tok.kind in {"AND", "OR", "NOT"} else tok
-        meaningful.append(parser.atom(token))
+        if token.kind in {"AND", "OR", "NOT"}:
+            token = Lexeme("word", token.value)
+        atoms.append(parser.atom(token))
     if mode == "phrase":
-        loose = [atom for atom in meaningful if atom.kind == "word" and not atom.field]
+        loose = [atom for atom in atoms if atom.kind == "word" and not atom.field]
         if loose:
-            meaningful = [atom for atom in meaningful if atom not in loose] + [Atom("phrase", " ".join(a.value for a in loose))]
-    if mode == "prefix" and not any(atom.kind == "prefix" for atom in meaningful):
+            atoms = [atom for atom in atoms if atom not in loose]
+            atoms.append(Atom("phrase", " ".join(atom.value for atom in loose)))
+    if mode == "prefix" and not any(atom.kind == "prefix" for atom in atoms):
         raise QueryError("Add a trailing asterisk to the prefix, for example querySel*.")
-    if mode == "field" and not any(atom.field for atom in meaningful):
+    if mode == "field" and not any(atom.field for atom in atoms):
         raise QueryError("Specify a field, for example title:Promise.all or source:mdn.")
     constraint, scoring = None, []
-    for atom in meaningful:
+    for atom in atoms:
         if atom.field or atom.kind in {"phrase", "prefix"}:
             constraint = join(constraint, "AND", atom)
         if atom.kind != "meta":
@@ -217,13 +220,17 @@ def parse(text, mode, settings, topics):
 
 
 def edit_distance(first, second, bound):
+    """Find the minimum insertions, deletions and substitutions within a bound."""
     if abs(len(first) - len(second)) > bound:
         return bound + 1
     previous = list(range(len(second) + 1))
-    for i, a in enumerate(first, 1):
-        row = [i]
-        for j, b in enumerate(second, 1):
-            row.append(min(row[j - 1] + 1, previous[j] + 1, previous[j - 1] + (a != b)))
+    for first_index, first_char in enumerate(first, 1):
+        row = [first_index]
+        for second_index, second_char in enumerate(second, 1):
+            insert = row[second_index - 1] + 1
+            delete = previous[second_index] + 1
+            replace = previous[second_index - 1] + (first_char != second_char)
+            row.append(min(insert, delete, replace))
         if min(row) > bound:
             return bound + 1
         previous = row
@@ -268,6 +275,7 @@ class Matcher:
         return result
 
     def match(self, node):
+        """Return eligible document IDs satisfying a Boolean tree or one constraint."""
         if node is None:
             return set(self.eligible)
         if isinstance(node, Operator):
@@ -279,29 +287,51 @@ class Matcher:
         if node.kind == "meta":
             return self.eligible & self.metadata[node.field].get(node.value, set())
         field = FIELD_ID.get(node.field)
-        terms = [token.term for token in analyze(node.value)]
         if node.kind == "prefix":
-            return set().union(*(self.docs(term, field) for term, _ in self.prefix(node.value)))
+            documents = set()
+            for term, _weight in self.prefix(node.value):
+                documents.update(self.docs(term, field))
+            return documents
+        terms = [token.term for token in analyze(node.value)]
         if not terms:
             return set()
-        if node.kind != "phrase":
-            return set.intersection(*(self.docs(term, field) for term in terms))
-        by_term = [self.index.posting(term)[2] for term in terms]
+        if node.kind == "phrase":
+            return self.phrase_documents(terms, field)
+        return set.intersection(*(self.docs(term, field) for term in terms))
+
+    def phrase_documents(self, terms, requested_field):
+        """Match consecutive original tokens within the same field and segment."""
+        posting_lists = [self.index.posting(term)[2] for term in terms]
+        candidates = self.eligible.intersection(*(set(postings) for postings in posting_lists))
         found = set()
-        for doc in set.intersection(self.eligible, *(set(posting) for posting in by_term)):
-            positions = [
-                {(fid, seg, pos - offset) for fid, entries in posting[doc].items() if field is None or field == fid
-                 for seg, pos, _start, _end, original in entries if original}
-                for offset, posting in enumerate(by_term)
-            ]
-            if set.intersection(*positions):
-                found.add(doc)
+        for document_id in candidates:
+            common_starts = None
+            for offset, postings in enumerate(posting_lists):
+                starts = set()
+                for field, positions in postings[document_id].items():
+                    if requested_field is not None and field != requested_field:
+                        continue
+                    for segment, position, _start, _end, original in positions:
+                        if original:
+                            # Consecutive phrase terms all lead back to the same start.
+                            starts.add((field, segment, position - offset))
+                if common_starts is None:
+                    common_starts = starts
+                else:
+                    common_starts.intersection_update(starts)
+                if not common_starts:
+                    break
+            if common_starts:
+                found.add(document_id)
         return found
 
     def docs(self, term, field):
-        return {doc for doc, values in self.index.posting(term)[2].items() if doc in self.eligible and (field is None or field in values)}
+        postings = self.index.posting(term)[2]
+        return {document_id for document_id, fields in postings.items()
+                if document_id in self.eligible and (field is None or field in fields)}
 
     def scoring(self, atoms, fuzzy=False):
+        """Accumulate weights by term and optional field, expanding supported atoms."""
         terms = {}
         for atom in atoms:
             field = FIELD_ID.get(atom.field)
@@ -309,8 +339,12 @@ class Matcher:
                 candidates = self.prefix(atom.value)
             else:
                 candidates = []
+                expand_spelling = fuzzy and not atom.field and atom.kind == "word"
                 for token in analyze(atom.value):
-                    candidates.extend(self.fuzzy(token.term) if fuzzy and not atom.field and atom.kind == "word" else [(token.term, 1.0)])
+                    if expand_spelling:
+                        candidates.extend(self.fuzzy(token.term))
+                    else:
+                        candidates.append((token.term, 1.0))
             for term, weight in candidates:
                 terms[term, field] = terms.get((term, field), 0) + weight
         if len(terms) > self.settings["query_tokens"] + 3 * self.settings["expansion"]:

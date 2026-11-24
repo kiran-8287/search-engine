@@ -4,33 +4,43 @@ TechSearch searches a frozen English corpus of MDN pages and Stack Overflow thre
 
 The active release `250a15ecd349951d6c69364c` has 15,345 documents and 197,628 dense passages. It passed release validation on Windows. The separate fixture suite passed 49 tests. See [execution results](docs/EXECUTION_REPORT.md), [status](docs/IMPLEMENTATION_STATUS.md), and [the work log](progress/WORK_LOG.md) for evidence about each release.
 
-## Start with the saved release
+## Start the TechSearch server
 
-Run commands from the repository root. Bootstrap is for a fresh Python 3.11 or 3.12 environment. It installs the project with CPU encoder, research, and test extras. Use `--no-tests` to skip the test extras. Installation requires dependency access or a complete OS-specific `--wheelhouse`. With an existing environment, start at the offline readiness check.
+One local server serves both **Search** and **IR Lab**. Open a terminal in the repository root and run the command for your OS. These commands use the existing `.venv` and saved active release. If `.venv` is missing, see [first-time setup](#first-time-setup).
 
 ### Windows PowerShell
 
 ```powershell
-py -3.12 scripts/bootstrap.py
-$tsPython = ".\.venv\Scripts\python.exe"
-& $tsPython -m techsearch doctor --offline
-& $tsPython scripts/start.py --host 127.0.0.1 --port 8000
+.\.venv\Scripts\python.exe scripts/start.py --host localhost --port 8000
 ```
 
 ### Linux
 
 ```sh
-python3.12 scripts/bootstrap.py
-ts_python=./.venv/bin/python
-"$ts_python" -m techsearch doctor --offline
-"$ts_python" scripts/start.py --host 127.0.0.1 --port 8000
+./.venv/bin/python scripts/start.py --host localhost --port 8000
 ```
 
-Open Search at `http://127.0.0.1:8000/` and the IR Lab at `http://127.0.0.1:8000/lab`. The active release is selected at process startup. Restart after activating a new release. To exercise the optional browser checks, run `python -m playwright install chromium` in the project environment and then `python -m pytest -m browser`. Those checks use an isolated, synthetic corpus and a loopback server.
+### Open the app
+
+- [Search](http://localhost:8000/)
+- [IR Lab](http://localhost:8000/lab)
+- [Readiness check](http://localhost:8000/api/v1/readiness) shows the loaded release ID and whether its dense index is available.
+
+Keep the terminal open while using the app. Press **Ctrl+C** in that terminal to stop the server. To load a newly activated release, stop the server and run the same startup command again.
+
+### First-time setup
+
+If the project environment is missing, run `py -3.12 scripts/bootstrap.py` on Windows or `python3.12 scripts/bootstrap.py` on Linux from the repository root. Bootstrap supports Python 3.11 and 3.12. It installs the CPU encoder, research, and test dependencies. Add `--no-tests` to skip the test dependencies or `--wheelhouse PATH` to install from a complete offline wheel directory for your OS.
+
+Return to the startup command for your OS after setup. To check the saved release and its local encoder from the terminal, run `python -m techsearch doctor --offline` with the project environment's Python.
+
+## Browser checks
+
+To exercise the optional browser checks, run `python -m playwright install chromium` in the project environment and then `python -m pytest -m browser`. Those checks use an isolated, synthetic corpus and a loopback server.
 
 To reuse the Chromium installed in this Windows workspace, set `$env:PLAYWRIGHT_BROWSERS_PATH = Join-Path (Get-Location) 'artifacts/tooling/playwright'` before running the browser tests or verification script. The existing `.venv` uses the local interpreter under `artifacts/tooling/python/`.
 
-On Linux hosts that need an OS-installed Chromium, use `python -m pytest tests/browser -m browser --browser-executable=/usr/bin/chromium-browser`. After building a dense release and running its experiments/benchmark, `python scripts/verify_app.py --browser-executable /usr/bin/chromium-browser` checks the running real app, all eight modes, API constraints, pagination, feedback interactions, report charts, and desktop/mobile rendering. It saves screenshots and a JSON report under `artifacts/execution/browser/`. Its automated feedback interaction is separate from benchmark relevance labels.
+On Linux hosts that need an OS-installed Chromium, use `python -m pytest tests/browser -m browser --browser-executable=/usr/bin/chromium-browser`. With a dense release active and the server running, `python scripts/verify_app.py --browser-executable /usr/bin/chromium-browser` checks all eight modes, API constraints, pagination, session feedback, and the IR Lab sections on desktop and mobile. It records which reports exist and saves screenshots and JSON under `artifacts/execution/browser/`. The feedback check uses a browser session separate from benchmark relevance labels.
 
 ## Data acquisition and dense search
 
@@ -71,6 +81,7 @@ Run `python -m techsearch search "title:Promise.all" --mode field` for CLI acces
 
 ## Project references
 
+- [IR Lab navigation and reports](docs/IR_LAB.md)
 - [Implementation status](docs/IMPLEMENTATION_STATUS.md)
 - [Storage and data dictionary](docs/DATA_DICTIONARY.md)
 - [Decisions and known limits](docs/DECISIONS.md)

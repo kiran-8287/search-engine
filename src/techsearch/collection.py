@@ -51,7 +51,44 @@ def backup_raw(data, relative_paths):
                 temporary.replace(target)
 
 
+def stackoverflow_coverage(state, scope, target):
+    """Summarize eligible questions and outstanding answer IDs from a checkpoint."""
+    records = state.get("documents", {})
+    if isinstance(records, list):
+        # Older checkpoints store records in a list instead of an ID-keyed map.
+        records = {str(record["question_id"]): record for record in records
+                   if isinstance(record, dict) and "question_id" in record}
+    eligible_ids = set()
+    topics = Counter()
+    completed_accepted = set(map(str, state.get("accepted_answer_ids_done", [])))
+    pending_accepted = set()
+    for question_id, record in records.items():
+        try:
+            topic = corpus.topic_for_so(record, scope)
+        except (ValueError, TypeError, AttributeError):
+            continue
+        eligible_ids.add(question_id)
+        topics[topic] += 1
+        accepted_id = record.get("accepted_answer_id")
+        if accepted_id and str(accepted_id) not in completed_accepted:
+            pending_accepted.add(str(accepted_id))
+
+    completed_supplement = set(map(str, state.get("supplement_question_ids_done", [])))
+    return {
+        "eligible_questions": len(eligible_ids),
+        "raw_checkpoint_questions": len(records),
+        "eligible_by_topic": dict(topics),
+        "shortfall": max(0, target - len(eligible_ids)),
+        "pending_supplement_ids": sorted(eligible_ids - completed_supplement),
+        "pending_accepted_ids": sorted(pending_accepted),
+        "missing_accepted_ids": state.get("accepted_answers_missing", []),
+        "known_answer_failures": len(state.get("answer_request_errors", {})),
+        "partition_shortfalls": state.get("question_shortfalls", []),
+    }
+
+
 def collect(settings, source, *, revision=None, target=5000):
+    """Run a root collector and record its observed provenance and completion."""
     data = settings.path("data")
     manifest_file = data / "manifests" / f"collection-{source}.json"
     raw_file = data / "raw" / corpus.RAW_FILES[source]
@@ -106,29 +143,9 @@ def collect(settings, source, *, revision=None, target=5000):
         else:
             checkpoint = settings.root / "stackoverflow_checkpoint.json"
             state = read_json(checkpoint) if checkpoint.is_file() else {}
-            records = state.get("documents", {})
-            if isinstance(records, list):
-                records = {str(record["question_id"]): record for record in records if isinstance(record, dict) and "question_id" in record}
-            eligible = {}
-            topics = Counter()
-            for qid, record in records.items():
-                try:
-                    topic = corpus.topic_for_so(record, settings.scope)
-                except (ValueError, TypeError, AttributeError):
-                    continue
-                eligible[qid] = record
-                topics[topic] += 1
-            done = set(map(str, state.get("supplement_question_ids_done", [])))
-            accepted_done = set(map(str, state.get("accepted_answer_ids_done", [])))
-            pending_accepted = sorted({str(record["accepted_answer_id"]) for record in eligible.values()
-                                       if record.get("accepted_answer_id") and str(record["accepted_answer_id"]) not in accepted_done})
-            manifest.update(eligible_questions=len(eligible), raw_checkpoint_questions=len(records), eligible_by_topic=dict(topics),
-                            shortfall=max(0, target - len(eligible)), pending_supplement_ids=sorted(set(eligible) - done),
-                            pending_accepted_ids=pending_accepted, missing_accepted_ids=state.get("accepted_answers_missing", []),
-                            known_answer_failures=len(state.get("answer_request_errors", {})),
-                            partition_shortfalls=state.get("question_shortfalls", []))
+            manifest.update(stackoverflow_coverage(state, settings.scope, target))
             complete = bool(not code and raw_file.is_file() and not manifest["shortfall"]
-                            and not manifest["pending_supplement_ids"] and not pending_accepted)
+                            and not manifest["pending_supplement_ids"] and not manifest["pending_accepted_ids"])
         manifest["status"] = "complete" if complete else "partial" if manifest["raw_hashes"] else "blocked"
         if not complete:
             manifest["reason"] = "Collector interrupted or failed" if code else "Incomplete scope, quota, source or answer coverage; inspect stage details"

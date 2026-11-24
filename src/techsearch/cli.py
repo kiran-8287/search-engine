@@ -105,7 +105,7 @@ def parser():
             cmd.add_argument("--annotate", action="store_true", help="Explicitly send pooled evidence to the configured provider")
             cmd.add_argument("--limit", type=int, default=50, help="New pooled judgments allowed in this invocation")
     cmd = commands.add_parser("serve", help="Start the app against an existing release")
-    cmd.add_argument("--host", default="127.0.0.1")
+    cmd.add_argument("--host", default="localhost")
     cmd.add_argument("--port", type=int, default=8000)
     cmd = commands.add_parser("package-demo", help="Write an offline local demonstration ZIP from the active release")
     cmd.add_argument("--output", type=Path)

@@ -14,7 +14,7 @@ from .config import load_settings
 from .dense import DenseUnavailable
 from .feedback import SnapshotMissing, search_id
 from .io import WorkloadError, read_json
-from .pipeline import ReleaseUnavailable, open_release, status
+from .pipeline import RELEASE_ID, ReleaseUnavailable, open_release, status
 from .query import QueryError
 from .repository import Documents
 from .service import SearchService, document_detail, page_of
@@ -115,6 +115,10 @@ def create_app(settings=None):
     def lab():
         return FileResponse(frontend / "lab.html")
 
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon():
+        return FileResponse(frontend / "assets" / "favicon.ico", media_type="image/vnd.microsoft.icon")
+
     app.mount("/assets", StaticFiles(directory=frontend / "assets"), name="assets")
 
     @app.get("/api/v1/health")
@@ -186,28 +190,86 @@ def create_app(settings=None):
                 "dense": {k: v for k, v in info["dense"].items() if k != "model"} if info["dense"] else None,
                 "artifact_bytes": sum(item["bytes"] for item in info["files"].values()), "seconds": info["seconds"]}
 
-    def load_report(name):
+    def saved_report(name, release_id):
+        path = settings.path("artifacts") / "reports" / release_id / f"{name}.json"
+        if not path.is_file():
+            return None
+        try:
+            saved = read_json(path)
+        except (OSError, ValueError) as error:
+            raise HTTPException(409, "The saved report could not be read.") from error
+        if not isinstance(saved, dict) or saved.get("name") != name or saved.get("release_id") != release_id:
+            raise HTTPException(409, "The saved report does not match the selected release or report.")
+        report = saved.get("report")
+        if not isinstance(report, dict) or report.get("release_id", release_id) != release_id:
+            raise HTTPException(409, "The saved report does not match the selected release or report.")
+        split = name.rsplit("-", 1)[-1]
+        if split in {"dev", "test"} and report.get("split", split) != split:
+            raise HTTPException(409, "The saved report does not match the selected split.")
+        return {"status": report.get("status", "available"), **saved}
+
+    def load_report(name, release_id=None):
         if name not in REPORTS:
             raise HTTPException(404, "Unknown report.")
-        active = service()
-        if name == "graph":
-            return {"name": name, "status": "available", "release_id": active.release.id, "report": active.release.info["graph"]}
-        path = settings.path("artifacts") / "reports" / active.release.id / f"{name}.json"
-        if path.is_file():
-            saved = read_json(path)
-            return {"status": saved["report"].get("status", "available"), **saved}
-        if name == "compression":
-            return {"name": name, "status": "build-only", "release_id": active.release.id,
-                    "report": {"codecs": active.release.info["lexical"]["compression"]}}
-        return {"name": name, "status": "not-run", "release_id": active.release.id}
+        active = service().release
+        selected_id = release_id or active.id
+        use_active = selected_id == active.id
+        if not use_active and not (settings.path("artifacts") / "reports" / selected_id).is_dir():
+            raise HTTPException(404, "Unknown report release.")
+        # Existing Graph clients receive the graph embedded in the active build.
+        if name == "graph" and release_id is None:
+            return {"name": name, "status": "available", "release_id": active.id, "report": active.info["graph"]}
+        saved = saved_report(name, selected_id)
+        if saved is not None:
+            return saved
+        if use_active and name == "graph":
+            return {"name": name, "status": "build-only", "release_id": active.id, "report": active.info["graph"]}
+        if use_active and name == "compression":
+            return {"name": name, "status": "build-only", "release_id": active.id,
+                    "report": {"codecs": active.info["lexical"]["compression"]}}
+        return {"name": name, "status": "not-run", "release_id": selected_id}
+
+    @app.get("/api/v1/report-inventory")
+    def report_inventory():
+        active_id = service().release.id
+        directory = settings.path("artifacts") / "reports"
+        historical = sorted(path.name for path in directory.glob("*")
+                            if path.is_dir() and RELEASE_ID.fullmatch(path.name) and path.name != active_id)
+        releases = {}
+        for release_id in [active_id, *historical]:
+            availability = {}
+            for name in sorted(REPORTS):
+                try:
+                    saved = saved_report(name, release_id)
+                except HTTPException:
+                    availability[name] = "invalid"
+                    continue
+                if saved is not None:
+                    availability[name] = saved["status"]
+                elif release_id == active_id and name in {"graph", "compression"}:
+                    availability[name] = "build-only"
+            if availability or release_id == active_id:
+                releases[release_id] = availability
+
+        protocol = {key: settings.evaluation[key] for key in ("pool_depth", "recall_depth", "latency_repeats")}
+        frozen = settings.path("data") / "evaluation" / "frozen.json"
+        if frozen.is_file():
+            try:
+                catalog = read_json(frozen)
+                protocol["groups"] = {split: sum(group["split"] == split for group in catalog["groups"])
+                                      for split in ("dev", "test")}
+                protocol["fingerprint"] = catalog["group_fingerprint"]
+            except (OSError, ValueError, KeyError, TypeError):
+                protocol["catalog_unavailable"] = True
+        return {"active_release_id": active_id, "releases": releases, "protocol": protocol}
 
     @app.get("/api/v1/reports/{name}")
-    def report(name: str):
-        return load_report(name)
+    def report(name: str, release: str | None = Query(None, pattern=r"^[a-f0-9]{24}$")):
+        return load_report(name, release)
 
     @app.get("/api/v1/benchmarks/{split}")
-    def benchmarks(split: Literal["dev", "test"]):
-        return load_report(f"benchmark-{split}")
+    def benchmarks(split: Literal["dev", "test"], release: str | None = Query(None, pattern=r"^[a-f0-9]{24}$")):
+        return load_report(f"benchmark-{split}", release)
 
     @app.get("/api/v1/pipeline")
     def pipeline():
@@ -216,9 +278,11 @@ def create_app(settings=None):
                        if isinstance(item, dict) and name != "raw" else item) for name, item in stages.items()}
 
     @app.get("/api/v1/exports/reports/{name}")
-    def report_export(name: str, response: Response):
-        response.headers["Content-Disposition"] = f'attachment; filename="{name}.json"' if name in REPORTS else "attachment"
-        return load_report(name)
+    def report_export(name: str, response: Response, release: str | None = Query(None, pattern=r"^[a-f0-9]{24}$")):
+        result = load_report(name, release)
+        filename = f"{name}-{result['release_id']}.json" if release else f"{name}.json"
+        response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return result
 
     @app.get("/api/v1/exports/search/{sid}")
     def snapshot_export(sid: str, request: Request, response: Response):

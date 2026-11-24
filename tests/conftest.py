@@ -32,6 +32,7 @@ def settings(tmp_path, monkeypatch):
     shutil.copy2(ROOT / "frontend/lab.html", tmp_path / "frontend/lab.html")
     for directory in ("css", "js"):
         shutil.copytree(ROOT / "frontend/assets" / directory, tmp_path / "frontend/assets" / directory)
+    shutil.copy2(ROOT / "frontend/assets/favicon.ico", tmp_path / "frontend/assets/favicon.ico")
     for file in (ROOT / "tests/fixtures").glob("*.json"):
         shutil.copy2(file, tmp_path / file.name)
     monkeypatch.delenv("STACKEXCHANGE_API_KEY", raising=False)

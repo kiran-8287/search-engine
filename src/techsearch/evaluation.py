@@ -175,11 +175,15 @@ def save_benchmark(settings, service, name, summary):
 
 
 def pool_for(run, settings):
+    """Pool unique documents through the judging depth for each query group."""
     depth = max(10, settings.evaluation["pool_depth"], settings.evaluation["recall_depth"])
     cases = []
     for group in run["runs"]:
-        ids = {stable for entry in group["methods"].values() if entry["status"] == "ok" for stable in entry["ids"][:depth]}
-        cases.extend((group, stable) for stable in sorted(ids))
+        documents = set()
+        for method in group["methods"].values():
+            if method["status"] == "ok":
+                documents.update(method["ids"][:depth])
+        cases.extend((group, stable) for stable in sorted(documents))
     rng = random.Random(settings.default["resources"]["seed"] + (1 if run["split"] == "test" else 0))
     rng.shuffle(cases)
     return cases
@@ -319,19 +323,34 @@ def evaluate(settings, service, split, *, annotate=False, limit=50, ablations=Fa
 
 
 def scores(ids, grades, recall_depth):
+    """Calculate ranked metrics for a query whose returned documents were judged."""
     def gain(sequence):
         return sum((2**value - 1) / math.log2(rank + 2) for rank, value in enumerate(sequence))
+
     relevant = {doc for doc, grade in grades.items() if grade >= 2}
-    dcg = gain([grades[doc] for doc in ids[:10]])
+    first_ten = ids[:10]
+    dcg = gain([grades[doc] for doc in first_ten])
     ideal = gain(sorted(grades.values(), reverse=True)[:10])
-    return {"P@5": sum(doc in relevant for doc in ids[:5]) / 5, "P@10": sum(doc in relevant for doc in ids[:10]) / 10,
-            "nDCG@10": dcg / ideal if ideal else 0.0, "MRR@10": next((1 / rank for rank, doc in enumerate(ids[:10], 1) if doc in relevant), 0.0),
-            f"pooled Recall@{recall_depth}": len(relevant.intersection(ids[:recall_depth])) / len(relevant) if relevant else None}
+    reciprocal_rank = next((1 / rank for rank, doc in enumerate(first_ten, 1) if doc in relevant), 0.0)
+    recall = None
+    if relevant:
+        returned_relevant = relevant.intersection(ids[:recall_depth])
+        recall = len(returned_relevant) / len(relevant)
+    return {"P@5": sum(doc in relevant for doc in ids[:5]) / 5,
+            "P@10": sum(doc in relevant for doc in first_ten) / 10,
+            "nDCG@10": dcg / ideal if ideal else 0.0,
+            "MRR@10": reciprocal_rank, f"pooled Recall@{recall_depth}": recall}
 
 
 def mean(rows):
-    keys = list(rows[0]) if rows else []
-    return {key: statistics.mean(values) if (values := [row[key] for row in rows if row[key] is not None]) else None for key in keys}
+    """Average each metric across groups that have a value for it."""
+    if not rows:
+        return {}
+    averages = {}
+    for key in rows[0]:
+        values = [row[key] for row in rows if row[key] is not None]
+        averages[key] = statistics.mean(values) if values else None
+    return averages
 
 
 def metrics(run, qrels, recall_depth):

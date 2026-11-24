@@ -125,32 +125,37 @@ class Runtime:
 
 
 def rocchio(index, query, judgments, stable_to_doc, eligible, *, beta=0.75, gamma=0.25, expansion=6):
-    accepted = [(stable_to_doc[stable], value) for stable, value in judgments.items()
-                if stable in stable_to_doc and stable_to_doc[stable] in eligible]
-    applied = dict(query)
+    """Use normalized vectors of judged parents to adjust and expand a lexical query."""
+    accepted = []
+    for stable_id, value in judgments.items():
+        document_id = stable_to_doc.get(stable_id)
+        if document_id is not None and document_id in eligible:
+            accepted.append((document_id, value))
+    adjusted_query = dict(query)
     if not accepted or not query:
-        return applied, []
+        return adjusted_query, []
     count = index.info["parents"]
     signs = Counter(value for _, value in accepted)
     centroid = Counter()
-    for doc, sign in accepted:
-        raw = index.terms(doc)
-        weighted = {}
-        for term, values in raw.items():
+    for document_id, sign in accepted:
+        weighted_terms = {}
+        for term, field_counts in index.terms(document_id).items():
             df = index.df(term)
             if term.isalpha() and 4 <= len(term) <= 30 and 1 < df <= max(2, count * 0.3):
-                weighted[term] = sum(values.values()) * tfidf_idf(count, df)
-        norm = math.sqrt(sum(value * value for value in weighted.values())) or 1
+                weighted_terms[term] = sum(field_counts.values()) * tfidf_idf(count, df)
+        norm = math.sqrt(sum(weight * weight for weight in weighted_terms.values())) or 1
+        # Divide by the number of judgments of this sign to get its mean vector.
         factor = (beta if sign == 1 else -gamma) / signs[sign]
-        for term, value in weighted.items():
+        for term, value in weighted_terms.items():
             centroid[term] += factor * value / norm
     base = {term for term, _ in query}
     for (term, field), weight in query.items():
-        applied[term, field] = max(weight * 0.15, weight + centroid[term])
-    new = [term for term, value in sorted(centroid.items(), key=lambda item: (-item[1], item[0])) if value > 0 and term not in base][:expansion]
-    for term in new:
-        applied[term, None] = centroid[term]
-    return applied, new
+        adjusted_query[term, field] = max(weight * 0.15, weight + centroid[term])
+    ranked_terms = sorted(centroid.items(), key=lambda item: (-item[1], item[0]))
+    expansion_terms = [term for term, value in ranked_terms if value > 0 and term not in base][:expansion]
+    for term in expansion_terms:
+        adjusted_query[term, None] = centroid[term]
+    return adjusted_query, expansion_terms
 
 
 def search_id():

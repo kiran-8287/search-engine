@@ -7,11 +7,11 @@
 | Active corpus and lexical indexes | Built and validated | Release `250a15ecd349951d6c69364c` has 15,345 documents from canonical snapshot `1a1a58867f0b20556402c331`. Standard and deep validation passed. |
 | Active exact dense and hybrid | Built and validated | The same release has 197,628 passages and 384-dimensional vectors. The pinned MiniLM revision is `1110a243fdf4706b3f48f1d95db1a4f5529b4d41`. |
 | Historical lexical experiments | Measured | Codec, TAAT/DAAT, retrieval and latent reports are saved for `6f86fc58d97fad8a0c0ec387` and `a585b9035a3c6cd217a93cbb`. Development benchmark and ablation runs are saved for `6f86fc58d97fad8a0c0ec387`. |
-| HTTP and browser interfaces | Implemented and smoke-tested on the active release | Saved Chromium 159 verification covered Search, previews, source filtering, and IR Lab using real results. |
+| HTTP and browser interfaces | Implemented and smoke-tested on the active release | Chromium 159 checks covered Search and the seven IR Lab sections, including saved report release selection. See the [IR Lab guide](IR_LAB.md). |
 | Benchmark protocol and query catalog | Frozen, validation passed | 300 dev / 300 test, 25/class/split, no cross-split duplicate normalized queries; independent conformance fixtures |
 | AI relevance evaluation | Pending configuration and judgments | The saved development evaluation has zero labels and gives missing annotation credentials/model as the blocker. No relevance metrics are available. |
 | Data acquisition | MDN and SO pilot exports saved | The pinned MDN run saved 12,650 structured pages. The later SO pilot reached 5,000 eligible questions. The active release still uses 2,748 eligible legacy SO questions. |
-| Fixture suite | Passed on Windows | All 49 tests passed, including Search and IR Lab against temporary fixture releases. |
+| Fixture suite | Passed on Windows | All 53 tests passed, including Search and IR Lab against temporary fixture releases. |
 | Offline demo packaging | Archive and Windows runtime verified | The extracted bundle passed keyword, semantic and hybrid API searches with Python socket access and DNS blocked. A fresh disconnected installation and other destination OSes remain unverified. See the [demo run sheet](DEMO_RUN_SHEET.md). |
 
 The **42,374** passage count belongs to the earlier Linux dense release `0bc9d95b4db6f1357b62a591` on 7,691 legacy documents, as recorded in the work log. Its manifest is absent from this workspace. The active Windows build uses refreshed structured MDN and the same legacy SO input. Its final build log, manifest, and vector array agree on the release and passage count. The build process had exited when checked on 2026-11-22.

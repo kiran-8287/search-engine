@@ -1,4 +1,5 @@
 import { $, SEARCH_LOCATION_KEY, addOptions, api, createPreview, el, resultItem, showJson, titleCase } from "./shared.js";
+import { renderReports } from "./lab-reports.js";
 
 const modes = [["keyword", "Keyword"], ["boolean", "Boolean"], ["phrase", "Phrase"], ["prefix", "Prefix"],
   ["fuzzy", "Fuzzy"], ["semantic", "Semantic"], ["hybrid", "Hybrid"], ["field", "Field-specific"]];
@@ -8,12 +9,14 @@ const panels = [];
 const preview = createPreview();
 let comparison;
 let reportWork;
+const query = $("#query");
+const labStorageKey = "techsearch.lab";
 
 try {
   const lastSearch = sessionStorage.getItem(SEARCH_LOCATION_KEY);
   if (lastSearch?.startsWith("/?")) $("#return-search").href = lastSearch;
 } catch {
-  // The default Search link works without browser storage.
+  // The Search page handles the fallback link if the saved path is unavailable here.
 }
 
 function fields(name, defaultMode, prefix) {
@@ -60,33 +63,36 @@ function fields(name, defaultMode, prefix) {
   numeric("depth", "Candidate depth", 1, 1000, 1, "Configured");
   checkbox("authority", "MDN authority");
   checkbox("diversify", "MMR");
-  container.append(el("legend", name), controls, checks);
+  const reranking = el("details", null, "lab-reranking");
+  reranking.append(el("summary", "Authority & diversification"), checks);
+  container.append(el("legend", name), controls, reranking);
   $("#configurations").append(container);
   return inputs;
 }
 
 panels.push(fields("Method A", "keyword", "method-a"), fields("Method B", "hybrid", "method-b"));
-api("/filters").then(({ topic }) => {
-  panels.forEach((panel) => addOptions(panel.topic, topic.map((value) => [value, titleCase(value)])));
-}).catch(() => {});
 
 function options(inputs) {
-  const result = { query: $("#query").value.trim(), page_size: 10 };
+  const result = { query: query.value.trim(), page_size: 10 };
   for (const [key, control] of Object.entries(inputs)) {
-    if (control.type === "checkbox") result[key] = control.checked;
-    else if (control.value) result[key] = control.type === "number" ? control.valueAsNumber : control.value;
+    if (control.type === "checkbox") {
+      result[key] = control.checked;
+    } else if (control.value) {
+      result[key] = control.type === "number" ? control.valueAsNumber : control.value;
+    }
   }
   return result;
 }
 
 function panel(name, data) {
   const cell = el("div", null, "rank-panel");
-  cell.append(el("h2", name));
+  cell.append(el("h3", name));
   if (data.error) {
     cell.append(el("p", data.error));
     return cell;
   }
   cell.append(el("p", data.total + " ranked results · " + Math.round(data.timing_ms) + " ms", "rank-meta technical"));
+  cell.append(el("p", "Active release " + data.release_id, "report-meta technical"));
   if (!data.total) cell.append(el("p", "No matches."));
   for (const warning of data.warnings) cell.append(el("p", warning, "callout"));
   const exportLink = el("a", "Export ranking");
@@ -123,133 +129,199 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
-const reports = [["index", "Index"], ["compression", "Compression"], ["taat-daat", "TAAT / DAAT"],
-  ["graph", "Graph"], ["retrieval", "Rankers / feedback"], ["latent", "LSI / K-means"], ["benchmark-dev", "Dev benchmark"],
-  ["evaluation-dev", "Dev metrics"], ["benchmark-test", "Test benchmark"], ["evaluation-test", "Test metrics"],
-  ["ablations-dev", "Dev ablations"], ["ablations-test", "Test ablations"],
-  ["evaluation-ablations-dev", "Dev ablation metrics"], ["evaluation-ablations-test", "Test ablation metrics"]];
 
-function bytes(value) {
-  return new Intl.NumberFormat().format(value) + " bytes";
-}
+const navigation = [...document.querySelectorAll("#lab-nav a")];
+const sectionPicker = $("#lab-section");
+const sectionTitle = $("#section-title");
+const releasePicker = $("#report-release");
+const splitPicker = $("#report-split");
+const viewPicker = $("#evaluation-view");
+const reportStatus = $("#report-status");
+const report = $("#report");
+let inventoryRequest;
+let inventory;
+let state;
 
-function reportTable(caption, headers, rows) {
-  const frame = el("div", null, "table-scroll");
-  const table = el("table");
-  const label = el("caption", caption, "sr-only");
-  const thead = el("thead");
-  const headings = el("tr");
-  for (const text of headers) {
-    const header = el("th", text);
-    header.scope = "col";
-    headings.append(header);
-  }
-  thead.append(headings);
-  const tbody = el("tbody");
-  for (const row of rows) {
-    const tr = el("tr");
-    row.forEach((value, index) => tr.append(el("td", value ?? "Unavailable", index ? "technical" : "")));
-    tbody.append(tr);
-  }
-  table.append(label, thead, tbody);
-  frame.append(table);
-  frame.tabIndex = 0;
-  frame.setAttribute("role", "region");
-  frame.setAttribute("aria-label", caption);
-  return frame;
-}
-
-function chart(codecs) {
-  const section = el("div", null, "chart");
-  section.append(el("p", "Complete postings artifact size"));
-  const max = Math.max(1, ...Object.values(codecs).map((item) => item.artifact_bytes));
-  for (const [name, stats] of Object.entries(codecs)) {
-    const row = el("div", null, "chart-row");
-    const bar = el("progress");
-    bar.max = max;
-    bar.value = stats.artifact_bytes;
-    bar.setAttribute("aria-label", name + " artifact size");
-    row.append(el("span", name), bar, el("span", bytes(stats.artifact_bytes)));
-    section.append(row);
-  }
-  return section;
-}
-
-function reportSummary(name, report, display) {
-  if (name === "index") {
-    const stats = report.lexical;
-    const rows = [["Release", report.release_id], ["Parents", stats.parents.toLocaleString()],
-      ["Vocabulary", stats.vocabulary.toLocaleString()], ["Postings", stats.postings.toLocaleString()],
-      ["Artifacts", bytes(report.artifact_bytes)]];
-    if (report.dense) rows.push(["Dense passages", report.dense.passages.toLocaleString()]);
-    display.append(reportTable("Index summary", ["Measure", "Value"], rows));
-  }
-  if (report.codecs) {
-    const rows = Object.entries(report.codecs).map(([codec, stats]) =>
-      [codec, bytes(stats.payload_bytes), bytes(stats.metadata_bytes), bytes(stats.artifact_bytes)]);
-    display.append(chart(report.codecs), reportTable("Compression sizes", ["Codec", "Payload", "Metadata", "Total"], rows));
-  }
-  if (report.retained_edges !== undefined) {
-    display.append(reportTable("Graph summary", ["Measure", "Value"], [
-      ["MDN pages", report.parents], ["Retained edges", report.retained_edges],
-      ["Isolates", report.isolates], ["Dangling nodes", report.dangling],
-    ]));
-  }
-  if (name === "taat-daat" && report.rows?.length) {
-    const rows = report.rows.map((row) => [row.query, row.condition, row.strategy.toUpperCase(), row.p50_ms?.toFixed(2), row.p95_ms?.toFixed(2)]);
-    display.append(reportTable("Execution timings", ["Query", "Condition", "Strategy", "p50 (ms)", "p95 (ms)"], rows));
-  }
-  if (report.outcomes) {
-    const rows = Object.entries(report.outcomes).map(([method, outcome]) => [method, outcome.ok ?? 0, outcome.degraded ?? 0, outcome.unavailable ?? 0]);
-    display.append(reportTable("Benchmark outcomes", ["Method", "Completed", "Degraded", "Unavailable"], rows));
-  }
-  if (report.aggregates) {
-    const measures = [...new Set(Object.values(report.aggregates).flatMap(Object.keys))];
-    const rows = Object.entries(report.aggregates).map(([method, metrics]) => [
-      method, ...measures.map((measure) => metrics[measure]?.toFixed(3)),
-    ]);
-    display.append(el("p", "AI-judged relevance"), reportTable("Relevance metrics", ["Method", ...measures], rows));
+function savedLab() {
+  try {
+    return JSON.parse(sessionStorage.getItem(labStorageKey)) || {};
+  } catch {
+    return {};
   }
 }
 
-async function selectReport(name, label) {
+const saved = savedLab();
+let topicPreferences = panels.map((_panel, index) => saved.methods?.[index]?.topic);
+
+function setControl(control, value) {
+  if (control.type === "checkbox") {
+    if (typeof value === "boolean") control.checked = value;
+    return;
+  }
+  if (typeof value !== "string") return;
+  if (control.tagName === "SELECT" && ![...control.options].some((option) => option.value === value)) return;
+  const previous = control.value;
+  control.value = value;
+  if (!control.checkValidity()) control.value = previous;
+}
+
+if (typeof saved.query === "string") query.value = saved.query.slice(0, 512);
+for (const [index, panel] of panels.entries()) {
+  for (const [key, control] of Object.entries(panel)) {
+    if (key !== "topic") setControl(control, saved.methods?.[index]?.[key]);
+  }
+}
+
+function rememberLab() {
+  const methods = panels.map((panel, index) => {
+    const values = {};
+    for (const [key, control] of Object.entries(panel)) {
+      values[key] = control.type === "checkbox" ? control.checked : control.value;
+    }
+    if (topicPreferences) values.topic = topicPreferences[index];
+    return values;
+  });
+  try {
+    sessionStorage.setItem(labStorageKey, JSON.stringify({ state, query: query.value, methods }));
+  } catch {
+    // Navigation still works when browser storage is unavailable.
+  }
+}
+
+form.addEventListener("input", rememberLab);
+form.addEventListener("change", rememberLab);
+api("/filters").then(({ topic }) => {
+  const choices = topic.map((value) => [value, titleCase(value)]);
+  for (const [index, panel] of panels.entries()) {
+    addOptions(panel.topic, choices);
+    setControl(panel.topic, topicPreferences[index]);
+  }
+  topicPreferences = null;
+  rememberLab();
+}).catch(() => {
+  // The unfiltered comparison is available without the topic list.
+});
+
+function readLocation(restore) {
+  const params = new URLSearchParams(location.search);
+  const fallback = restore && params.size === 0 ? (saved.state || {}) : {};
+  const section = params.get("section") || fallback.section;
+  const release = params.get("release") || fallback.release;
+  const split = params.get("split") || fallback.split;
+  const view = params.get("view") || fallback.view;
+  return {
+    section: navigation.some((link) => link.dataset.section === section) ? section : "overview",
+    release: typeof release === "string" && /^[a-f0-9]{24}$/.test(release) ? release : "",
+    split: split === "test" ? "test" : "dev",
+    view: ["features", "protocol"].includes(view) ? view : "relevance",
+  };
+}
+
+function labUrl(value) {
+  const params = new URLSearchParams({ section: value.section });
+  if (value.release) params.set("release", value.release);
+  if (value.split !== "dev") params.set("split", value.split);
+  if (value.view !== "relevance") params.set("view", value.view);
+  return "/lab?" + params.toString();
+}
+
+function showReportControls() {
+  const chooseRelease = state.section !== "overview" && releasePicker.options.length > 1;
+  const chooseSplit = ["speed", "evaluation"].includes(state.section);
+  const evaluation = state.section === "evaluation";
+  $("#report-controls").hidden = !chooseRelease && !chooseSplit && !evaluation;
+  $("#release-control").hidden = !chooseRelease;
+  $("#split-control").hidden = !chooseSplit;
+  $("#evaluation-controls").hidden = !evaluation;
+  releasePicker.value = state.release;
+  splitPicker.value = state.split;
+  viewPicker.value = state.view;
+}
+
+function showReleaseChoices(data) {
+  releasePicker.replaceChildren(new Option("Active release", ""));
+  for (const id of Object.keys(data.releases)) {
+    if (id !== data.active_release_id) releasePicker.add(new Option("Historical · " + id, id));
+  }
+  if (state.release === data.active_release_id) {
+    state = { ...state, release: "" };
+    history.replaceState(null, "", labUrl(state));
+    rememberLab();
+  }
+  if (state.release && !Object.hasOwn(data.releases, state.release)) {
+    releasePicker.add(new Option("Unavailable · " + state.release, state.release));
+  }
+}
+
+function getInventory() {
+  if (!inventoryRequest) {
+    inventoryRequest = api("/report-inventory").catch((error) => {
+      inventoryRequest = null;
+      throw error;
+    });
+  }
+  return inventoryRequest;
+}
+
+async function loadReports() {
   reportWork?.abort();
   reportWork = new AbortController();
   const { signal } = reportWork;
-  const display = $("#report");
-  for (const button of $("#report-tabs").children) button.setAttribute("aria-pressed", String(button.dataset.name === name));
-  display.replaceChildren(el("p", "Loading " + label.toLowerCase() + "…"));
+  report.replaceChildren();
+  reportStatus.textContent = "Loading reports…";
   try {
-    const value = await api(name === "index" ? "/index" : "/reports/" + name, { signal });
+    inventory = await getInventory();
     if (signal.aborted) return;
-    display.replaceChildren(el("h3", label));
-    if (value.status === "not-run") {
-      display.append(el("p", "This experiment has not been run for the active release."));
-      return;
-    }
-    if (value.status === "blocked" || value.status === "partial") {
-      display.append(el("p", value.report.reason), showJson("Evaluation status", value.report));
-      return;
-    }
-    if (value.status === "build-only") display.append(el("p", "Sizes are available from the index build. The decode comparison has not been run."));
-    const report = name === "index" ? value : value.report;
-    reportSummary(name, report, display);
-    display.append(showJson("Report details", report));
-    if (name !== "index") {
-      const exportLink = el("a", "Export JSON");
-      exportLink.href = "/api/v1/exports/reports/" + name;
-      display.append(exportLink);
-    }
+    showReleaseChoices(inventory);
+    showReportControls();
+    const contents = await renderReports(state, inventory, signal);
+    if (signal.aborted) return;
+    report.replaceChildren(contents);
+    reportStatus.textContent = "";
   } catch (error) {
-    if (!signal.aborted) display.replaceChildren(el("p", error.message));
+    if (signal.aborted) return;
+    reportStatus.textContent = "Could not load reports. " + error.message;
   }
 }
 
-for (const [name, label] of reports) {
-  const button = el("button", label, "button secondary");
-  button.dataset.name = name;
-  button.setAttribute("aria-pressed", "false");
-  button.addEventListener("click", () => selectReport(name, label));
-  $("#report-tabs").append(button);
+function showLab(next, historyAction, focusHeading = false) {
+  const changedSection = !state || state.section !== next.section;
+  state = next;
+  const path = labUrl(state);
+  if (historyAction === "push" && path !== location.pathname + location.search) history.pushState(null, "", path);
+  if (historyAction === "replace") history.replaceState(null, "", path);
+  if (changedSection) {
+    preview.close({ restoreFocus: false });
+    window.scrollTo(0, 0);
+  }
+  for (const link of navigation) {
+    const isCurrent = link.dataset.section === state.section;
+    if (isCurrent) {
+      link.setAttribute("aria-current", "page");
+      sectionTitle.textContent = link.textContent;
+    } else {
+      link.removeAttribute("aria-current");
+    }
+    link.href = labUrl({ ...state, section: link.dataset.section });
+  }
+  sectionPicker.value = state.section;
+  $("#comparison-panel").hidden = state.section !== "compare";
+  showReportControls();
+  rememberLab();
+  if (focusHeading) sectionTitle.focus({ preventScroll: true });
+  loadReports();
 }
-selectReport("index", "Index");
+
+for (const link of navigation) {
+  link.addEventListener("click", (event) => {
+    if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    showLab({ ...state, section: link.dataset.section }, "push", true);
+  });
+}
+sectionPicker.addEventListener("change", () => showLab({ ...state, section: sectionPicker.value }, "push"));
+releasePicker.addEventListener("change", () => showLab({ ...state, release: releasePicker.value }, "push"));
+splitPicker.addEventListener("change", () => showLab({ ...state, split: splitPicker.value }, "push"));
+viewPicker.addEventListener("change", () => showLab({ ...state, view: viewPicker.value }, "push"));
+window.addEventListener("popstate", () => showLab(readLocation(false)));
+showLab(readLocation(true), "replace");

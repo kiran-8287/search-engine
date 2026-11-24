@@ -63,7 +63,7 @@ Verification used the existing Windows Python dependencies. A clean disconnected
 Commands, logs, environment versions, catalog audit, collection gaps, source-integrity results, and browser screenshots are in `artifacts/execution/`. Reports and runs are grouped by immutable release under `artifacts/reports/` and `artifacts/runs/`. The work log records failures and repairs as well as passes.
 
 ```sh
-OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 .venv/bin/python scripts/start.py --host 127.0.0.1 --port 8000
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 .venv/bin/python scripts/start.py --host localhost --port 8000
 ```
 
-Open Search at `http://127.0.0.1:8000/` and IR Lab at `http://127.0.0.1:8000/lab`. Restart after changing the active release.
+Open Search at `http://localhost:8000/` and IR Lab at `http://localhost:8000/lab`. Restart after changing the active release.

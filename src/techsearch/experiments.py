@@ -14,28 +14,35 @@ from .indexing import Index, tfidf_idf
 from .io import digest, now, write_json
 from .preprocessing import analyze
 
+MMR_COEFFICIENT = 0.7
+MMR_WINDOW = 35
 
-def mmr(rows, index, coefficient=0.7, window=35):
+
+def mmr(rows, index, coefficient=MMR_COEFFICIENT, window=MMR_WINDOW):
+    """Reorder the first results by rank and their term overlap with earlier picks."""
     rows = list(rows)
-    pool = rows[:window]
-    if len(pool) < 2:
+    candidates = rows[:window]
+    if len(candidates) < 2:
         return rows
-    weights = {row[0]: 1 - rank / (len(pool) - 1) for rank, row in enumerate(pool)}
-    terms = {doc: set(index.terms(doc)) for doc, *_ in pool}
+    relevance = {row[0]: 1 - rank / (len(candidates) - 1) for rank, row in enumerate(candidates)}
+    terms = {document_id: set(index.terms(document_id)) for document_id, *_ in candidates}
     chosen = []
-    similarity = dict.fromkeys(terms, 0.0)
-    while pool:
-        def score(row):
-            doc = row[0]
-            return coefficient * weights[doc] - (1 - coefficient) * similarity[doc]
-        winner = max(pool, key=lambda row: (score(row), -row[0]))
-        doc, relevance, details = winner
-        chosen.append((doc, relevance, [*details, ("mmr", score(winner), similarity[doc])]))
-        pool.remove(winner)
-        for other, *_ in pool:
-            union = terms[doc] | terms[other]
-            overlap = len(terms[doc] & terms[other]) / len(union) if union else 0
-            similarity[other] = max(similarity[other], overlap)
+    closest_overlap = dict.fromkeys(terms, 0.0)
+
+    def selection_score(hit):
+        document_id = hit[0]
+        return coefficient * relevance[document_id] - (1 - coefficient) * closest_overlap[document_id]
+
+    while candidates:
+        winner = max(candidates, key=lambda hit: (selection_score(hit), -hit[0]))
+        document_id, score, details = winner
+        explanation = ("mmr", selection_score(winner), closest_overlap[document_id])
+        chosen.append((document_id, score, [*details, explanation]))
+        candidates.remove(winner)
+        for other_id, *_ in candidates:
+            union = terms[document_id] | terms[other_id]
+            overlap = len(terms[document_id] & terms[other_id]) / len(union) if union else 0
+            closest_overlap[other_id] = max(closest_overlap[other_id], overlap)
     return chosen + rows[window:]
 
 
@@ -45,6 +52,7 @@ def percentile(numbers, p):
 
 
 def execution_report(service, queries, repeats):
+    """Compare TAAT/DAAT result signatures and time fresh and reused readers."""
     rows = []
     for query in queries:
         signatures = set()
@@ -73,6 +81,7 @@ def execution_report(service, queries, repeats):
 
 
 def compression_report(release, queries, repeats):
+    """Measure decoding and verify each codec returns identical positions."""
     terms = sorted({token.term for query in queries for token in analyze(query)})
     reference = None
     reports = {}
@@ -93,6 +102,7 @@ def compression_report(release, queries, repeats):
 
 
 def latent_report(service, window, components, clusters, seed, queries):
+    """Project a sample of TF-IDF vectors into fewer dimensions and cluster it."""
     started = perf_counter()
     import numpy as np
     from scipy.sparse import csr_matrix
@@ -101,57 +111,67 @@ def latent_report(service, window, components, clusters, seed, queries):
     from sklearn.metrics import silhouette_score
     from sklearn.preprocessing import normalize
 
-    ids = sorted(service.parents)
-    if len(ids) < 4:
+    document_ids = sorted(service.parents)
+    if len(document_ids) < 4:
         raise ValueError("LSI and K-means need at least four canonical parents.")
     rng = random.Random(seed)
-    ids = sorted(rng.sample(ids, min(window, len(ids))))
+    sample_ids = sorted(rng.sample(document_ids, min(window, len(document_ids))))
     with ExitStack() as stack:
         index = Index(service.release.path, stack, files=service.index_files)
         vocabulary = dict(index.frequent_terms(2, 30000))
-        if len(vocabulary) < 3 or len(ids) < 4:
+        if len(vocabulary) < 3 or len(sample_ids) < 4:
             raise ValueError("The sample has too few documents or repeated terms.")
-        columns = {term: col for col, term in enumerate(vocabulary)}
-        values, ri, ci = [], [], []
-        for row, doc in enumerate(ids):
-            for term, fields in index.terms(doc).items():
-                if term in vocabulary:
-                    ri.append(row)
-                    ci.append(columns[term])
-                    values.append(sum(fields.values()) * tfidf_idf(index.info["parents"], vocabulary[term]))
-    matrix = normalize(csr_matrix((values, (ri, ci)), shape=(len(ids), len(vocabulary))))
-    svd = TruncatedSVD(n_components=min(components, len(ids) - 1, len(vocabulary) - 1), random_state=seed)
+        columns = {term: column for column, term in enumerate(vocabulary)}
+        values, row_numbers, column_numbers = [], [], []
+        for row, document_id in enumerate(sample_ids):
+            for term, fields in index.terms(document_id).items():
+                if term not in vocabulary:
+                    continue
+                row_numbers.append(row)
+                column_numbers.append(columns[term])
+                idf = tfidf_idf(index.info["parents"], vocabulary[term])
+                values.append(sum(fields.values()) * idf)
+    # Rows represent sampled documents and columns represent terms.
+    shape = (len(sample_ids), len(vocabulary))
+    matrix = normalize(csr_matrix((values, (row_numbers, column_numbers)), shape=shape))
+    dimensions = min(components, len(sample_ids) - 1, len(vocabulary) - 1)
+    svd = TruncatedSVD(n_components=dimensions, random_state=seed)
     latent = normalize(svd.fit_transform(matrix))
-    count = min(clusters, len(ids) - 1)
+
+    # K-means runs on the projected document vectors.
+    count = min(clusters, len(sample_ids) - 1)
     model = KMeans(n_clusters=count, random_state=seed, n_init=10)
     labels = model.fit_predict(latent)
-    n = len(set(labels))
-    diagnostics = {"clusters": count, "effective_clusters": n, "inertia": float(model.inertia_),
-                   "sizes": dict(Counter(map(int, labels))),
-                   "silhouette": float(silhouette_score(latent, labels, sample_size=min(1000, len(ids)), random_state=seed))
-                   if 1 < n < len(ids) else None}
+    effective_clusters = len(set(labels))
+    silhouette = None
+    if 1 < effective_clusters < len(sample_ids):
+        silhouette = float(silhouette_score(latent, labels, sample_size=min(1000, len(sample_ids)), random_state=seed))
+    diagnostics = {"clusters": count, "effective_clusters": effective_clusters, "inertia": float(model.inertia_),
+                   "sizes": dict(Counter(map(int, labels))), "silhouette": silhouette}
     anchor = latent[0]
     cosine = latent @ anchor
-    nearest = sorted(range(1, len(ids)), key=lambda row: (-float(cosine[row]), ids[row]))[:10]
+    nearest = sorted(range(1, len(sample_ids)), key=lambda row: (-float(cosine[row]), sample_ids[row]))[:10]
     query_runs = []
     for query in queries:
         frequencies = Counter(token.term for token in analyze(query) if token.term in columns)
         if not frequencies:
             query_runs.append({"query": query, "hits": []})
             continue
-        vector = csr_matrix(([tf * tfidf_idf(service.index_files.info["parents"], vocabulary[term])
-                              for term, tf in frequencies.items()],
-                             ([0] * len(frequencies), [columns[term] for term in frequencies])),
-                            shape=(1, len(columns)))
+        query_values = []
+        query_columns = []
+        for term, tf in frequencies.items():
+            query_values.append(tf * tfidf_idf(service.index_files.info["parents"], vocabulary[term]))
+            query_columns.append(columns[term])
+        vector = csr_matrix((query_values, ([0] * len(frequencies), query_columns)), shape=(1, len(columns)))
         similarities = latent @ normalize(svd.transform(normalize(vector)))[0]
-        order = sorted(range(len(ids)), key=lambda row: (-float(similarities[row]), ids[row]))[:10]
-        query_runs.append({"query": query, "hits": [{"id": service.parents[ids[row]]["stable"], "cosine": float(similarities[row])}
+        order = sorted(range(len(sample_ids)), key=lambda row: (-float(similarities[row]), sample_ids[row]))[:10]
+        query_runs.append({"query": query, "hits": [{"id": service.parents[sample_ids[row]]["stable"], "cosine": float(similarities[row])}
                                                    for row in order]})
-    return {"sample_ids": [service.parents[doc]["stable"] for doc in ids], "vocabulary": len(vocabulary),
+    return {"sample_ids": [service.parents[document_id]["stable"] for document_id in sample_ids], "vocabulary": len(vocabulary),
             "configuration": {"seed": seed, "window": window, "requested_components": components, "requested_clusters": clusters},
             "lsi": {"dimensions": latent.shape[1], "explained_variance_ratio": float(np.sum(svd.explained_variance_ratio_)),
-                    "anchor": service.parents[ids[0]]["stable"],
-                    "nearest": [{"id": service.parents[ids[row]]["stable"], "cosine": float(cosine[row])} for row in nearest],
+                    "anchor": service.parents[sample_ids[0]]["stable"],
+                    "nearest": [{"id": service.parents[sample_ids[row]]["stable"], "cosine": float(cosine[row])} for row in nearest],
                     "query_runs": query_runs},
             "kmeans": {**diagnostics, "assignments": list(map(int, labels))},
             "seconds": perf_counter() - started}

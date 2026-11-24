@@ -64,7 +64,7 @@ def main():
     flags = " --lexical-only" if args.lexical_only else ""
     print(f"{prefix} -m techsearch pipeline --resume{flags}")
     print(f"{prefix} -m techsearch validate-release")
-    print(f"{prefix} -m techsearch serve --host 127.0.0.1 --port 8000")
+    print(f"{prefix} -m techsearch serve --host localhost --port 8000")
 
 
 if __name__ == "__main__":

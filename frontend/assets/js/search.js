@@ -28,6 +28,19 @@ let work;
 let completion;
 let timer;
 
+function restoreLabSearch() {
+  // The Lab can link back before its comparison script has loaded.
+  if (location.hash !== "#last-search") return;
+  let path = "/";
+  try {
+    const storedPath = sessionStorage.getItem(SEARCH_LOCATION_KEY);
+    if (storedPath?.startsWith("/?")) path = storedPath;
+  } catch {
+    // The Search homepage is available without session storage.
+  }
+  history.replaceState(null, "", path);
+}
+
 function fromLocation() {
   const params = new URLSearchParams(location.search);
   const value = params.get("source");
@@ -98,14 +111,24 @@ function clearCompletions() {
   completions.replaceChildren();
 }
 
+function lastPage(data) {
+  return Math.max(1, Math.ceil(data.total / data.page_size));
+}
+
+function snapshotPage(searchId, page, signal) {
+  const path = "/search/" + encodeURIComponent(searchId);
+  return api(path + "?page=" + page + "&size=" + PAGE_SIZE, { signal });
+}
+
 async function getResults(view, searchId, signal, applyFeedback) {
-  const pageFrom = (id, page) => api("/search/" + encodeURIComponent(id) + "?page=" + page + "&size=" + PAGE_SIZE, { signal });
   if (searchId && !applyFeedback) {
     try {
-      const stored = await pageFrom(searchId, view.page);
-      const last = Math.max(1, Math.ceil(stored.total / stored.page_size));
-      return stored.page > last ? await pageFrom(searchId, last) : stored;
+      const stored = await snapshotPage(searchId, view.page, signal);
+      const last = lastPage(stored);
+      if (stored.page > last) return await snapshotPage(searchId, last, signal);
+      return stored;
     } catch (error) {
+      // Expired snapshots can be replaced by running the same query again.
       if (error.status !== 404) throw error;
     }
   }
@@ -113,13 +136,13 @@ async function getResults(view, searchId, signal, applyFeedback) {
     body: { query: view.query, source: view.source || null, topic: view.topic || null, page_size: PAGE_SIZE, apply_feedback: applyFeedback },
     signal,
   });
-  const last = Math.max(1, Math.ceil(first.total / first.page_size));
-  const page = Math.min(view.page, last);
-  return page === 1 ? first : pageFrom(first.search_id, page);
+  const page = Math.min(view.page, lastPage(first));
+  if (page === 1) return first;
+  return snapshotPage(first.search_id, page, signal);
 }
 
 function pagination(data) {
-  const last = Math.ceil(data.total / data.page_size);
+  const last = lastPage(data);
   pages.replaceChildren();
   pages.hidden = last < 2;
   if (pages.hidden) return;
@@ -136,10 +159,11 @@ function pagination(data) {
     return button;
   };
   pages.append(control(data.page - 1, "← Previous", "Previous"));
-  const visible = Array.from({ length: last }, (_, i) => i + 1)
-    .filter((n) => last <= 5 || n === 1 || n === last || Math.abs(n - data.page) <= 1);
   let previous = 0;
-  for (const number of visible) {
+  for (let number = 1; number <= last; number++) {
+    const atEnd = number === 1 || number === last;
+    const nearCurrent = Math.abs(number - data.page) <= 1;
+    if (last > 5 && !atEnd && !nearCurrent) continue;
     if (previous && number - previous > 1) {
       const gap = el("span", "…", "pagination-gap");
       gap.setAttribute("aria-hidden", "true");
@@ -167,40 +191,45 @@ function enrichVisible(hits, signal) {
   for (const row of hits.keys()) observe.observe(row);
 }
 
+function showSuggestions(spellings) {
+  if (!spellings?.length) return;
+  suggestions.append(el("span", "Try a related spelling"));
+  for (const spelling of spellings) {
+    const button = el("button", spelling, "button secondary");
+    button.type = "button";
+    button.addEventListener("click", () => submit(spelling));
+    suggestions.append(button);
+  }
+}
+
+async function saveFeedback(searchId, document, value, savedVotes, signal) {
+  try {
+    await api("/feedback", { body: { search_id: searchId, document, value } });
+    savedVotes.set(document, value);
+    votes.set(searchId, savedVotes);
+    if (signal.aborted) return false;
+    setStatus("Feedback saved for this search.");
+    refine.hidden = false;
+    return true;
+  } catch (error) {
+    if (!signal.aborted) setStatus(error.message, { error: true });
+    return false;
+  }
+}
+
 function render(data, signal) {
   snapshot = data.search_id;
   state = { ...state, page: data.page };
   updateHistory("replace", state, snapshot);
   warnings.replaceChildren(...(data.warnings || []).map((warning) => el("p", warning)));
-  if (data.suggestions?.length) {
-    suggestions.append(el("span", "Try a related spelling"));
-    for (const suggestion of data.suggestions) {
-      const button = el("button", suggestion, "button secondary");
-      button.type = "button";
-      button.addEventListener("click", () => submit(suggestion));
-      suggestions.append(button);
-    }
-  }
+  showSuggestions(data.suggestions);
   if (!data.total) {
     setStatus("No matches in this snapshot. Try different terms or filters.");
     return;
   }
 
   const savedVotes = votes.get(snapshot) || new Map();
-  const judge = async (document, value) => {
-    try {
-      await api("/feedback", { body: { search_id: data.search_id, document, value } });
-      savedVotes.set(document, value);
-      votes.set(data.search_id, savedVotes);
-      if (signal.aborted) return false;
-      setStatus("Feedback saved for this search.");
-      refine.hidden = false;
-      return true;
-    } catch (error) {
-      if (!signal.aborted) setStatus(error.message, { error: true });
-      return false;
-    }
-  };
+  const judge = (document, value) => saveFeedback(data.search_id, document, value, savedVotes, signal);
 
   const supplemental = new Map();
   for (const hit of data.results) {
@@ -214,8 +243,18 @@ function render(data, signal) {
   exportLink.hidden = false;
   refine.hidden = !savedVotes.size;
   setStatus(data.total + (data.total === 1 ? " result" : " results") +
-    (data.total > data.page_size ? " · Page " + data.page + " of " + Math.ceil(data.total / data.page_size) : ""));
+    (data.total > data.page_size ? " · Page " + data.page + " of " + lastPage(data) : ""));
   pagination(data);
+}
+
+function clearResults() {
+  results.replaceChildren();
+  pages.replaceChildren();
+  pages.hidden = true;
+  warnings.replaceChildren();
+  suggestions.replaceChildren();
+  exportLink.hidden = true;
+  refine.hidden = true;
 }
 
 async function navigate(view, { record, searchId, applyFeedback = false, focus = false } = {}) {
@@ -228,16 +267,12 @@ async function navigate(view, { record, searchId, applyFeedback = false, focus =
   state = view;
   if (record) updateHistory(record, view, searchId);
   showView(view);
-  results.replaceChildren();
-  pages.replaceChildren();
-  pages.hidden = true;
-  warnings.replaceChildren();
-  suggestions.replaceChildren();
-  exportLink.hidden = true;
-  refine.hidden = true;
-  panel.setAttribute("aria-busy", String(hasSearch(view)));
+  clearResults();
+
+  const searching = hasSearch(view);
+  panel.setAttribute("aria-busy", String(searching));
   if (record === "push") window.scrollTo(0, 0);
-  if (!hasSearch(view)) {
+  if (!searching) {
     setStatus("");
     return;
   }
@@ -283,8 +318,14 @@ for (const tab of tabs) {
 sourceTabs.addEventListener("keydown", (event) => {
   const index = tabs.indexOf(event.target);
   if (index < 0) return;
-  const target = { ArrowLeft: (index - 1 + tabs.length) % tabs.length, ArrowRight: (index + 1) % tabs.length, Home: 0, End: tabs.length - 1 }[event.key];
-  if (target === undefined) return;
+  let target;
+  switch (event.key) {
+    case "ArrowLeft": target = (index - 1 + tabs.length) % tabs.length; break;
+    case "ArrowRight": target = (index + 1) % tabs.length; break;
+    case "Home": target = 0; break;
+    case "End": target = tabs.length - 1; break;
+    default: return;
+  }
   event.preventDefault();
   tabs[target].focus();
   tabs[target].click();
@@ -325,6 +366,7 @@ document.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("popstate", (event) => navigate(fromLocation(), { searchId: event.state?.searchId }));
+restoreLabSearch();
 navigate(fromLocation(), { searchId: history.state?.searchId });
 api("/filters").then(({ topic: topics }) => {
   topic.querySelectorAll("option:not(:first-child)").forEach((option) => option.remove());

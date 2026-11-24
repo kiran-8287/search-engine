@@ -33,6 +33,7 @@ def tfidf_idf(count, frequency):
 
 
 def analyze_parent(document):
+    """Yield token and position records with the legacy phrase-safety flag."""
     for segment in document["segments"]:
         field = FIELD_ID[segment["field"]]
         ordinal = segment["ordinal"]
@@ -71,6 +72,7 @@ def reduce_shards(paths, directory, fan_in=24):
 
 
 def write_postings(directory, documents, shard_limit):
+    """Sort token occurrences in bounded runs and write one term at a time."""
     payload_sizes = Counter()
     encode_times = Counter()
     frequencies = {}
@@ -80,8 +82,10 @@ def write_postings(directory, documents, shard_limit):
         rows, paths = [], []
         for document in documents:
             for field, ordinal, position, token, phrase_safe in analyze_parent(document):
-                for term, original in [(token.term, int(phrase_safe)), *((alias, 0) for alias in token.aliases)]:
-                    rows.append([term, document["doc"], field, ordinal, position, token.start, token.end, original])
+                location = [document["doc"], field, ordinal, position, token.start, token.end]
+                rows.append([token.term, *location, int(phrase_safe)])
+                for alias in token.aliases:
+                    rows.append([alias, *location, 0])
                 if len(rows) >= shard_limit:
                     paths.append(temporary / f"shard-{len(paths)}.jsonl")
                     shard_rows(paths[-1], rows)
@@ -97,8 +101,10 @@ def write_postings(directory, documents, shard_limit):
             for term, group in groupby(merge(paths), key=lambda row: row[0]):
                 postings = {}
                 cf = 0
-                for _, doc, field, segment, position, start, end, original in group:
-                    postings.setdefault(doc, {}).setdefault(field, []).append((segment, position, start, end, original))
+                for _, document_id, field, segment, position, start, end, original in group:
+                    fields = postings.setdefault(document_id, {})
+                    positions = fields.setdefault(field, [])
+                    positions.append((segment, position, start, end, original))
                     cf += 1
                 df = len(postings)
                 frequencies[term] = df
@@ -122,7 +128,30 @@ def write_postings(directory, documents, shard_limit):
     return frequencies, posting_count, occurrences, compression
 
 
+def forward_records(documents, stats, idfs, weights, totals):
+    """Write per-document scoring stats and yield compressed term counts."""
+    for document in documents:
+        lengths = [0] * len(FIELDS)
+        term_frequencies = defaultdict(Counter)
+        expanded_length = 0
+        for field, _, _, token, _phrase_safe in analyze_parent(document):
+            lengths[field] += 1
+            for term in (token.term, *token.aliases):
+                term_frequencies[term][field] += 1
+                expanded_length += 1
+        squared_weights = []
+        for term, fields in term_frequencies.items():
+            weighted_tf = sum(weights[field] * tf for field, tf in fields.items())
+            squared_weights.append((idfs[term] * weighted_tf) ** 2)
+        norm = math.sqrt(sum(squared_weights))
+        stats.write(STATS.pack(*lengths, expanded_length, norm))
+        for field, length in enumerate(lengths):
+            totals[field] += length
+        yield zlib.compress(dumps(term_frequencies).encode("utf-8"), level=3)
+
+
 def build_indexes(directory, field_weights, shard_limit):
+    """Build the posting lists first, then use their frequencies for the forward index."""
     started = perf_counter()
     documents = Documents(directory)
     frequencies, posting_count, occurrences, compression = write_postings(directory, documents, shard_limit)
@@ -131,25 +160,9 @@ def build_indexes(directory, field_weights, shard_limit):
     weights = [field_weights[field] for field in FIELDS]
     totals = [0] * len(FIELDS)
 
-    def forward(stats):
-        for document in documents:
-            lengths = [0] * len(FIELDS)
-            term_frequencies = defaultdict(Counter)
-            expanded_length = 0
-            for field, _, _, token, _phrase_safe in analyze_parent(document):
-                lengths[field] += 1
-                for term in (token.term, *token.aliases):
-                    term_frequencies[term][field] += 1
-                    expanded_length += 1
-            norm = math.sqrt(sum((idfs[term] * sum(weights[field] * tf for field, tf in values.items())) ** 2
-                                 for term, values in term_frequencies.items()))
-            stats.write(STATS.pack(*lengths, expanded_length, norm))
-            for field, length in enumerate(lengths):
-                totals[field] += length
-            yield zlib.compress(dumps(term_frequencies).encode("utf-8"), level=3)
-
     with atomic_file(directory / "forward-stats.bin") as stats:
-        write_records(directory / "forward.bin", directory / "forward.offsets", forward(stats))
+        records = forward_records(documents, stats, idfs, weights, totals)
+        write_records(directory / "forward.bin", directory / "forward.offsets", records)
     info = {"parents": count, "vocabulary": len(frequencies), "postings": posting_count, "occurrences": occurrences,
             "avg_lengths": [total / max(1, count) for total in totals], "original_tokens": sum(totals),
             "compression": compression, "seconds": perf_counter() - started}
