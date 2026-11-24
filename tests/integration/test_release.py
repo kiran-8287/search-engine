@@ -279,7 +279,7 @@ def test_lab_report_archive_is_explicit_and_validates_attribution(settings, rele
         assert f"benchmark-dev-{archived.id}.json" in export.headers["Content-Disposition"]
 
 
-def test_demo_bundle_keeps_saved_reports_and_portable_paths(settings, release, tmp_path):
+def test_demo_bundle_uses_portable_paths_and_keeps_reports_local(settings, release, tmp_path):
     import shutil
     from pathlib import Path
     from zipfile import ZipFile
@@ -295,8 +295,54 @@ def test_demo_bundle_keeps_saved_reports_and_portable_paths(settings, release, t
     save_report(settings, release, "retrieval", {"rows": []})
     bundle = package_demo(settings, release, tmp_path / "demo.zip")
     with ZipFile(bundle["bundle"]) as archive:
-        assert f"artifacts/reports/{release.id}/retrieval.json" in archive.namelist()
+        assert not any(name.startswith("artifacts/reports/") for name in archive.namelist())
         assert "frontend/assets/favicon.ico" in archive.namelist()
         assert ".env" not in archive.namelist()
         paths = yaml.safe_load(archive.read("config/default.yaml"))["paths"]
         assert paths == {"data": "data", "artifacts": "artifacts", "runtime": "data/runtime", "frontend": "frontend"}
+
+
+def test_demo_bundle_excludes_credentials_and_blocks_accidental_copies(settings, release, monkeypatch):
+    from zipfile import ZipFile
+
+    import yaml
+
+    from techsearch.packaging import package_demo
+
+    secret = "fake-private-credential-for-packaging-test"
+    root = settings.root
+    monkeypatch.setenv("TECHSEARCH_ANNOTATION_API_KEY", secret)
+    private_files = {
+        ".env": f"STACKEXCHANGE_API_KEY={secret}\n",
+        ".env.example": f"TECHSEARCH_ANNOTATION_API_KEY={secret}\n",
+        "frontend/assets/js/private.js": secret,
+        "docs/credentials.md": secret,
+        "data/runtime/session/feedback.jsonl": secret,
+        "data/evaluation/annotations/example.json": secret,
+        f"artifacts/reports/{release.id}/retrieval.json": secret,
+        "artifacts/another-demo.zip": secret,
+    }
+    for name, value in private_files.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(value, encoding="utf-8")
+    settings.default["private"] = secret
+    settings.search["private"] = secret
+    settings.evaluation["annotation"].update(model=secret, endpoint=f"https://example.test/{secret}")
+
+    output = root / "demo.zip"
+    package_demo(settings, release, output)
+    with ZipFile(output) as archive:
+        assert set(archive.namelist()).isdisjoint(private_files.keys() - {".env.example"})
+        assert archive.read(".env.example") == b"STACKEXCHANGE_API_KEY=\nTECHSEARCH_ANNOTATION_API_KEY=\n"
+        assert yaml.safe_load(archive.read("config/evaluation.yaml"))["annotation"]["model"] is None
+        for name in archive.namelist():
+            assert secret.encode() not in archive.read(name), name
+
+    # A credential copied into an allowlisted file should stop publication as well.
+    (root / "README.md").write_text(secret, encoding="utf-8")
+    blocked = root / "blocked" / "demo.zip"
+    with pytest.raises(ValueError, match=r"configured credential .* README\.md") as error:
+        package_demo(settings, release, blocked)
+    assert secret not in str(error.value)
+    assert not list(blocked.parent.iterdir())
