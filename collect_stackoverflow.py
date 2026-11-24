@@ -1271,7 +1271,7 @@ def select_answers(
 ) -> None:
     """Keep accepted answer plus the highest-scoring distinct alternatives."""
     missing_accepted_ids = missing_accepted_ids or set()
-    for question_id, document in documents.items():
+    for document in documents.values():
         answers = document.get("answers", [])
         answers.sort(
             key=lambda item: (

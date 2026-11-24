@@ -2,7 +2,7 @@
 
 TechSearch searches a frozen English corpus of MDN pages and Stack Overflow threads about JavaScript, HTML, CSS, accessibility, browser APIs, HTTP, security, and performance. Each hit is an original page or thread with source excerpts and attribution. The public interface routes searches automatically. The IR Lab exposes all eight modes, ranker settings, explanations, release statistics, and offline experiment reports.
 
-The active release `250a15ecd349951d6c69364c` has 15,345 documents and 197,628 dense passages. It passed release validation on Windows. The separate fixture suite passed 49 tests. See [execution results](docs/EXECUTION_REPORT.md), [status](docs/IMPLEMENTATION_STATUS.md), and [the work log](progress/WORK_LOG.md) for evidence about each release.
+The active release `250a15ecd349951d6c69364c` has 15,345 documents and 197,628 dense passages. It passed release validation on Windows. The separate fixture suite passed 53 tests. See [execution results](docs/EXECUTION_REPORT.md), [status](docs/IMPLEMENTATION_STATUS.md), and [the work log](progress/WORK_LOG.md) for evidence about each release.
 
 ## Start the TechSearch server
 
@@ -52,6 +52,13 @@ Run these optional stages before `preprocess` when you want to refresh or enrich
 4. `python -m techsearch download-model` resolves a full model revision and caches only the portable encoder files and attribution. The configured starting model is `sentence-transformers/all-MiniLM-L6-v2`. You can set `TECHSEARCH_CFG__DENSE__REVISION=<full-sha>` for a predetermined revision.
 5. `python -m techsearch inspect-data` inventories the available source schemas and eligibility. `python -m techsearch preprocess` writes or reuses an immutable JSONL snapshot. `python -m techsearch build-indexes` builds and activates a release using the local encoder if available. `python -m techsearch build-graph` exports an independent recomputation of the release's graph diagnostics. `python -m techsearch validate-release --deep` verifies payload and offset consistency. `python -m techsearch doctor --offline` checks readiness.
 6. If acquisition is unnecessary, `python -m techsearch pipeline --resume` resumes the offline preprocess/build stages as a pair. Raw files under `data/raw/` take precedence over the corresponding legacy root JSON. Collection stores prior raw versions under `data/raw/history/`. Collection status can be partial even when the current export is usable.
+
+The active release supplies its own passage vectors and mappings. Semantic
+and Hybrid search still need the pinned encoder files, which also ship in
+the demo ZIP. The individual embedding build cache was removed after offline
+verification. Future builds may have to encode those passages again. The
+pinned MDN ZIP is kept locally so collection can recreate its scoped
+extraction. See the [cleanup ledger](docs/CLEANUP_REPORT.md).
 
 The Stack Exchange key is used only by the SO collector. Optional AI relevance annotation needs `TECHSEARCH_ANNOTATION_API_KEY` and `TECHSEARCH_CFG__EVALUATION__ANNOTATION__MODEL`. The configured HTTPS annotation endpoint can be overridden. Search and app startup use local artifacts and require no credentials.
 

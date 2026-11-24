@@ -786,7 +786,6 @@ def extract_markdown_segments(
         text: str,
         *,
         language: str | None = None,
-        source_anchor: str | None = None,
     ) -> None:
         if segment_type == "code":
             cleaned = text.replace("\r\n", "\n").replace("\r", "\n")
@@ -809,8 +808,8 @@ def extract_markdown_segments(
             segment["language"] = language
         if segment_type == "code":
             segment["code"] = cleaned
-        if source_anchor or section_anchor:
-            segment["source_anchor"] = source_anchor or section_anchor
+        if section_anchor:
+            segment["source_anchor"] = section_anchor
         segments.append(segment)
 
     def walk(node: Any) -> None:
@@ -839,11 +838,7 @@ def extract_markdown_segments(
             heading_path[:] = heading_path[:level - 1]
             heading_path.append(clean_prose_text(text_value))
             section_anchor = str(node.get("id")) if node.get("id") else None
-            add_segment(
-                "heading",
-                text_value,
-                source_anchor=str(node.get("id")) if node.get("id") else None,
-            )
+            add_segment("heading", text_value)
             return
 
         if name == "p":
@@ -867,11 +862,6 @@ def extract_markdown_segments(
             add_segment("list_item", text_value)
             for child in node.find_all(["ul", "ol", "pre"], recursive=False):
                 walk(child)
-            for nested_list in node.find_all(["ul", "ol"], recursive=True):
-                if nested_list.parent is not node:
-                    # Nested list descendants are reached from their closest
-                    # list item, so do not walk them twice here.
-                    continue
             return
 
         if name in {"dt", "dd"}:
