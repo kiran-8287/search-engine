@@ -87,6 +87,11 @@ def verify(base, output, executable):
         report["checks"]["suggestions_empty_invalid"] = "passed"
         inventory = get("/report-inventory")
         assert inventory["active_release_id"] == ready["release_id"]
+        lab = get("/lab")
+        report["lab_measurement"] = (
+            {key: lab["measurement"][key] for key in ("split", "query_count", "paired_queries")}
+            if lab["measurement"] else None
+        )
         compression = get("/reports/compression")
         assert compression["status"] in {"available", "build-only"}
         report["compression_status"] = compression["status"]
@@ -133,79 +138,66 @@ def verify(base, output, executable):
         assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
         page.set_viewport_size({"width": 1440, "height": 1000})
         page.goto(base + "/lab")
-        nav = page.get_by_role("navigation", name="Lab sections")
-        expect(nav.get_by_role("link")).to_have_count(7)
-        expect(page.get_by_label("Lab section", exact=True)).not_to_be_visible()
-        expect(page.get_by_role("table", name="Index summary")).to_contain_text(ready["release_id"])
-        page.screenshot(path=str(output / "lab-overview.png"), animations="disabled")
-        nav.get_by_role("link", name="Compare searches").click()
-        for mode, query in CASES.items():
-            panels = page.locator("#configurations fieldset")
-            panels.nth(0).get_by_label("Mode", exact=True).select_option(mode)
-            panels.nth(1).get_by_label("Mode", exact=True).select_option(mode)
-            page.locator("#query").fill(query)
+        nav = page.get_by_role("navigation", name="IR Lab tabs")
+        expect(nav.get_by_role("link")).to_have_count(3)
+        model_table = page.get_by_role("table", name="Retrieval methods")
+        expect(model_table.get_by_role("row")).to_have_count(6)
+        assert lab["release_id"] == ready["release_id"]
+        if lab["measurement"]:
+            expect(page.get_by_text("Median search time by method", exact=True)).to_be_visible()
+            expect(model_table.get_by_role("row", name="BM25", exact=False)).to_contain_text(
+                f'{lab["measurement"]["timing_ms"]["bm25"]["warm"]["p50"]:.2f}')
+            page.get_by_text("Measurement details", exact=True).click()
+            measurement_link = page.get_by_role("link", name="Export measurements")
+            exported = page.request.get(base + measurement_link.get_attribute("href"))
+            assert exported.ok and exported.json()["report"]["run_id"] == lab["measurement"]["run_id"]
+            page.get_by_text("Measurement details", exact=True).click()
+            if lab["quality"] and lab["quality"].get("status") in {"blocked", "partial"}:
+                expect(page.get_by_text("Quality evaluation is pending", exact=False)).to_be_visible()
+                expect(page.get_by_text("Ranking quality by method", exact=False)).to_have_count(0)
+        page.screenshot(path=str(output / "lab-model-comparison.png"), full_page=True, animations="disabled")
+        nav.get_by_role("link", name="Try a query").click()
+        page.locator("#method-a-method").select_option("dense")
+        page.locator("#method-b-method").select_option("hybrid")
+        conceptual = "wait for several JavaScript promises to finish"
+        page.locator("#query").fill(conceptual)
+        with page.expect_response(lambda response: response.url.endswith("/api/v1/compare"), timeout=180000) as comparison:
             page.get_by_role("button", name="Compare", exact=True).click()
-            expect(page.locator("#status")).to_have_text("Comparison ready.", timeout=180000)
-            expect(page.locator("#rankings .rank-panel")).to_have_count(2)
-            expect(page.locator("#rankings .results").nth(0).locator("li").first).to_be_visible()
-        page.locator("#method-a-mode").select_option("semantic")
-        page.locator("#method-b-mode").select_option("hybrid")
-        page.locator("#query").fill("run asynchronous tasks in parallel")
-        page.get_by_role("button", name="Compare", exact=True).click()
-        expect(page.locator("#status")).to_have_text("Comparison ready.", timeout=180000)
+        both = comparison.value.json()
+        assert [both[side]["mode"] for side in ("left", "right")] == ["semantic", "hybrid"]
+        assert all(both[side]["release_id"] == ready["release_id"] and len(both[side]["results"]) == 5 for side in both)
+        report["lab_comparison"] = {"query": conceptual, "methods": {
+            row["mode"]: {"time_ms": row["timing_ms"], "top_titles": [hit["title"] for hit in row["results"]]}
+            for row in both.values()
+        }}
+        expect(page.locator("#status")).to_have_text("Comparison ready.")
         export_url = page.get_by_role("link", name="Export ranking").first.get_attribute("href")
         exported = page.request.get(base + export_url)
         assert exported.ok and exported.json()["release_id"] == ready["release_id"]
-        page.screenshot(path=str(output / "lab-comparison.png"), animations="disabled")
-        page.locator("#rankings").evaluate("element => window.scrollBy(0, element.getBoundingClientRect().top - 105)")
-        page.screenshot(path=str(output / "lab-comparison-results.png"), animations="disabled")
-        nav.get_by_role("link", name="Compression", exact=True).click()
-        expect(page.locator("#report progress")).to_have_count(3)
-        bars = page.locator("#report progress").evaluate_all("items => items.map(item => item.value)")
-        assert sorted(bars) == sorted(report["compression_artifact_bytes"].values())
-        page.screenshot(path=str(output / "lab-compression.png"), animations="disabled")
+        page.get_by_role("button", name="Preview", exact=True).first.click()
+        expect(page.get_by_role("dialog")).to_be_visible()
+        page.keyboard.press("Escape")
+        expect(page.get_by_role("dialog")).not_to_be_visible()
+        page.screenshot(path=str(output / "lab-try-query.png"), full_page=True, animations="disabled")
 
-        for label, filename in (("Speed & execution", "lab-speed.png"), ("Link analysis", "lab-links.png"),
-                                ("Topics & clusters", "lab-topics.png"), ("Evaluation", "lab-evaluation.png")):
-            nav.get_by_role("link", name=label).click()
-            expect(page.locator(".report-release")).to_have_text("Active release " + ready["release_id"])
-            page.screenshot(path=str(output / filename), animations="disabled")
-        if evaluation["status"] in {"blocked", "partial"}:
-            expect(page.locator("#report")).to_contain_text("Relevance metrics unavailable")
-        page.get_by_label("Evaluation view").select_option("protocol")
-        expect(page.get_by_role("table", name="Evaluation protocol")).to_be_visible()
-        page.get_by_label("Query split").select_option("test")
-        expect(page.get_by_label("Query split")).to_have_value("test")
+        nav.get_by_role("link", name="Course experiments").click()
+        compression_table = page.get_by_role("table", name="Index compression")
+        expect(compression_table.get_by_role("row")).to_have_count(4)
+        for name in ("Link authority", "Feedback", "LSI and K-means"):
+            page.get_by_text(name, exact=True).click()
+        expect(page.get_by_role("table", name="Link authority comparison")).to_be_visible()
+        page.evaluate("window.scrollTo({ top: 0, behavior: 'instant' })")
+        page.screenshot(path=str(output / "lab-course-experiments.png"), full_page=True, animations="disabled")
         page.go_back()
-        expect(page.get_by_label("Query split")).to_have_value("dev")
-
-        for archived_id, statuses in inventory["releases"].items():
-            if archived_id == ready["release_id"] or statuses.get("benchmark-dev") != "available":
-                continue
-            nav.get_by_role("link", name="Speed & execution").click()
-            page.get_by_label("Saved report release").select_option(archived_id)
-            expect(page.locator(".report-release.historical")).to_have_text("Historical release " + archived_id)
-            expect(page.get_by_role("table", name="Benchmark settings")).to_be_visible()
-            page.screenshot(path=str(output / "lab-historical-speed.png"), animations="disabled")
-            if statuses.get("evaluation-ablations-dev") in {"blocked", "partial"}:
-                nav.get_by_role("link", name="Evaluation").click()
-                page.get_by_label("Evaluation view").select_option("features")
-                expect(page.locator(".report-release.historical")).to_have_text("Historical release " + archived_id)
-                expect(page.locator("#report")).to_contain_text("Relevance metrics unavailable")
-                page.screenshot(path=str(output / "lab-historical-evaluation.png"), full_page=True, animations="disabled")
-            page.get_by_label("Saved report release").select_option("")
-            break
-
-        nav.get_by_role("link", name="Compare searches").click()
-        expect(page.locator("#query")).to_have_value("run asynchronous tasks in parallel")
-        expect(page.locator("#method-b-mode")).to_have_value("hybrid")
+        expect(page.locator("#query")).to_have_value(conceptual)
         page.get_by_role("link", name="Search", exact=True).click()
         expect(page.get_by_label("Search the corpus", exact=True)).to_have_value("CSS grid")
         page.get_by_role("link", name="IR Lab").click()
-        expect(page.locator("#query")).to_have_value("run asynchronous tasks in parallel")
+        nav.get_by_role("link", name="Try a query").click()
+        expect(page.locator("#query")).to_have_value(conceptual)
         page.set_viewport_size({"width": 390, "height": 844})
-        page.get_by_role("combobox", name="Lab section", exact=True).select_option("overview")
-        expect(page.get_by_role("table", name="Index summary")).to_be_visible()
+        nav.get_by_role("link", name="Model comparison").click()
+        expect(model_table).to_be_visible()
         assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
         page.screenshot(path=str(output / "lab-mobile.png"), animations="disabled")
         report["checks"]["lab_navigation_and_comparisons"] = "passed"

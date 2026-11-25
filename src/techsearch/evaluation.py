@@ -14,9 +14,11 @@ from time import perf_counter
 
 import requests
 
+from .dense import DenseUnavailable
 from .experiments import percentile, save_report
 from .io import ROUTER_VERSION, WorkloadError, digest, file_hash, now, peak_process_memory, read_json, write_csv, write_json
 from .preprocessing import analyze
+from .query import QueryError
 
 DESIGNS = {
     "auto": {"mode": "auto"},
@@ -28,6 +30,27 @@ DESIGNS = {
     "authority": {"mode": "auto", "authority": True},
     "mmr": {"mode": "auto", "diversify": True},
 }
+LAB_METHODS = ("tfidf", "bm25", "likelihood", "dense", "hybrid")
+LAB_DESIGNS = {key: DESIGNS[key] for key in LAB_METHODS} | {
+    "pagerank": {"mode": "keyword", "authority": True},
+}
+LAB_PROTOCOL = 2
+LAB_REPEATS = 1
+
+
+def lab_settings(settings):
+    """Settings that affect a Lab benchmark, independent of annotation credentials."""
+    return digest([settings.search, settings.dense, settings.scope, settings.default["graph"],
+                   settings.default["resources"]["seed"], {
+                       key: settings.evaluation[key] for key in ("pool_depth", "recall_depth")
+                   }, LAB_REPEATS])
+
+
+def matches_lab_run(settings, run, release_id, split, protocol):
+    return (protocol is not None and run.get("protocol") == protocol
+            and run.get("release_id") == release_id and run.get("split") == split
+            and run.get("lab_protocol") == LAB_PROTOCOL and run.get("router") == ROUTER_VERSION
+            and run.get("lab_settings") == lab_settings(settings) and run.get("methods") == LAB_DESIGNS)
 
 
 def home(settings):
@@ -71,9 +94,9 @@ def freeze(settings):
     return manifest
 
 
-def disposition(group, method):
+def disposition(group, design):
     query = group["query"]
-    options = dict(DESIGNS[method])
+    options = dict(design)
     # Exact-membership conformance is evaluated separately. Give fixed ranking
     # branches the same syntax constraints where the parser supports them.
     if group["class"] == "boolean" and options["mode"] != "auto":
@@ -81,36 +104,51 @@ def disposition(group, method):
     return query, options
 
 
-def benchmark(settings, service, split, *, ablations=False):
+def benchmark(settings, service, split, *, ablations=False, lab=False):
     frozen = home(settings) / "frozen.json"
     if not frozen.is_file():
         raise ValueError("Run freeze-evaluation before benchmarking.")
     protocol = read_json(frozen)
+    if lab and protocol["group_fingerprint"] != digest(protocol["groups"]):
+        raise ValueError("The frozen query catalog does not match its fingerprint.")
     randomizer = random.Random(settings.default["resources"]["seed"])
     groups = [row for row in protocol["groups"] if row["split"] == split]
     if not groups:
         raise ValueError(f"No groups for {split}.")
-    methods = list(DESIGNS) if ablations else list(DESIGNS)[:4]
+    designs = LAB_DESIGNS if lab else DESIGNS if ablations else {key: DESIGNS[key] for key in list(DESIGNS)[:4]}
+    methods = list(designs)
     times = defaultdict(lambda: defaultdict(list))
+    paired_times = defaultdict(list)
     runs = []
-    repeats = settings.evaluation["latency_repeats"]
+    repeats = LAB_REPEATS if lab else settings.evaluation["latency_repeats"]
     if repeats < 1:
         raise ValueError("Evaluation requires at least one latency repeat.")
     results = defaultdict(Counter)
+    if lab:
+        for design in designs.values():
+            try:
+                service.search("browser event propagation", **design)
+            except (DenseUnavailable, QueryError, WorkloadError):
+                # Actual availability is recorded for each frozen query below.
+                pass
+    paired_count = 0
     for ordinal, group in enumerate(groups, 1):
         order = list(methods)
         randomizer.shuffle(order)
-        entries = {}
+        entries, query_times = {}, {}
         for method in order:
-            query, options = disposition(group, method)
-            from .dense import DenseUnavailable
-            from .query import QueryError
+            query, options = disposition(group, designs[method])
             try:
                 last = None
+                elapsed = []
                 for repeat in range(repeats):
                     start = perf_counter()
                     hits = service.search(query, **options)
-                    times[method]["first-query-pass" if repeat == 0 else "subsequent-query-pass"].append((perf_counter() - start) * 1000)
+                    duration = (perf_counter() - start) * 1000
+                    if lab:
+                        elapsed.append(duration)
+                    else:
+                        times[method]["first-query-pass" if repeat == 0 else "subsequent-query-pass"].append(duration)
                     ordering = [hit["id"] for hit in hits["results"]]
                     if last is not None and last != ordering:
                         raise ValueError("Repeated runs must preserve ranking within one release.")
@@ -120,16 +158,25 @@ def benchmark(settings, service, split, *, ablations=False):
                 results[method]["ok"] += 1
                 if hits["warnings"]:
                     results[method]["degraded"] += 1
+                elif lab:
+                    query_times[method] = elapsed
             except (DenseUnavailable, QueryError, WorkloadError) as error:
                 entries[method] = {"status": "unavailable", "reason": str(error)}
                 results[method]["unavailable"] += 1
+        if lab and all(method in query_times for method in LAB_METHODS):
+            paired_count += 1
+            for method in LAB_METHODS:
+                times[method]["warm"].extend(query_times[method])
+            if "pagerank" in query_times:
+                for method in ("bm25", "pagerank"):
+                    paired_times[method].extend(query_times[method])
         runs.append({**group, "methods": entries})
         if ordinal % 25 == 0:
             print(f"Benchmark {split}: {ordinal}/{len(groups)} groups complete.", file=sys.stderr, flush=True)
     summary = {
         "release_id": service.release.id, "created_at": now(), "split": split,
         "protocol": protocol["group_fingerprint"], "router": ROUTER_VERSION,
-        "configuration": settings.fingerprint, "methods": {key: DESIGNS[key] for key in methods},
+        "configuration": settings.fingerprint, "methods": designs,
         "candidate_depth": settings.search["candidate_depth"], "repeats": repeats,
         "latency_note": "Same process and OS page cache. First pass may include lazy model load. No cache eviction.",
         "machine": {"platform": platform.platform(), "python": platform.python_version(), "cpu": platform.processor(), "logical_cores": os.cpu_count()},
@@ -143,9 +190,17 @@ def benchmark(settings, service, split, *, ablations=False):
                                for condition, values in conditions.items()} for method, conditions in times.items()},
         "runs": runs,
     }
-    name = ("ablations-" if ablations else "benchmark-") + split
+    if lab:
+        summary.update(lab_protocol=LAB_PROTOCOL, lab_settings=lab_settings(settings), query_count=len(groups),
+                       paired_queries=paired_count,
+                       authority_timing_ms={method: {"p50": statistics.median(values),
+                                                    "p95": percentile(values, .95), "observations": len(values)}
+                                            for method, values in paired_times.items()},
+                       latency_note="One unmeasured warm-up per method. Full local search including query encoding and excerpts. "
+                                    "Recorded searches share one warmed process and OS cache. Cold starts were not measured.")
+    name = ("lab-" if lab else "ablations-" if ablations else "benchmark-") + split
     output = save_benchmark(settings, service, name, summary)
-    if ablations:
+    if ablations and not lab:
         # The ablation run already measures all four fixed baseline methods.
         # Export their actual observations as a documented subset, so normal
         # benchmark/evaluation views can use them without rerunning queries.
@@ -259,13 +314,29 @@ def annotation_key(release, protocol, config, group, stable):
     return digest([release, protocol, config["prompt_version"], config["model"], config["endpoint"], group["id"], stable])
 
 
-def evaluate(settings, service, split, *, annotate=False, limit=50, ablations=False):
-    name = ("ablations-" if ablations else "benchmark-") + split
-    report_name = f"evaluation-{'ablations-' if ablations else ''}{split}"
+def evaluate(settings, service, split, *, annotate=False, limit=50, ablations=False, lab=False):
+    name = ("lab-" if lab else "ablations-" if ablations else "benchmark-") + split
+    report_name = f"evaluation-{'lab-' if lab else 'ablations-' if ablations else ''}{split}"
     run_path = settings.path("artifacts") / "runs" / service.release.id / f"{name}.json"
     if not run_path.is_file():
         raise ValueError(f"Run {name} on this release first.")
     run = read_json(run_path)
+    provenance = {"split": split, "protocol": run["protocol"]}
+    if lab:
+        frozen = read_json(home(settings) / "frozen.json")
+        if (frozen["group_fingerprint"] != digest(frozen["groups"])
+                or not matches_lab_run(settings, run, service.release.id, split, frozen["group_fingerprint"])):
+            raise ValueError("The Lab benchmark does not match the current release, settings and frozen queries.")
+        provenance["measurement_run_id"] = digest(run)[:16]
+        # Use the same paired queries as the speed comparison. Failed/degraded
+        # searches remain in the benchmark record for coverage reporting.
+        groups = [group for group in run["runs"] if all(
+            group["methods"][method]["status"] == "ok" and not group["methods"][method]["degraded"]
+            for method in LAB_METHODS
+        )]
+        run = {**run, "runs": [{**group, "methods": {key: value for key, value in group["methods"].items()
+                                                    if value["status"] == "ok" and not value["degraded"]}}
+                               for group in groups]}
     config = settings.evaluation["annotation"]
     provider = AnnotationProvider(config) if annotate else None
     qrels = defaultdict(dict)
@@ -278,6 +349,9 @@ def evaluate(settings, service, split, *, annotate=False, limit=50, ablations=Fa
         path = directory / key[:2] / (key + ".json")
         if path.is_file():
             record = read_json(path)
+            if lab and (record.get("group") != group["id"] or record.get("document") != stable
+                        or type(record.get("grade")) is not int or not 0 <= record["grade"] <= 3):
+                raise ValueError("A cached Lab judgment does not match its query/document pair.")
         elif provider and spent < limit:
             evidence = evidence_for(service, group, stable)
             attempts = [provider.label(evidence, "primary")]
@@ -305,16 +379,23 @@ def evaluate(settings, service, split, *, annotate=False, limit=50, ablations=Fa
             reason = "Relevance evaluation is blocked: annotation credentials/model are missing. No relevance metrics are available."
         result = {"status": "blocked" if not annotate else "partial", "pending": pending,
                   "labeled": sum(map(len, qrels.values())), "new_judgments": spent, "reason": reason}
-        save_report(settings, service.release, report_name, {**result, "split": split, "protocol": run["protocol"]})
+        save_report(settings, service.release, report_name, {**result, **provenance})
         return result
     if not qrels:
         result = {"status": "blocked", "reason": "No pooled candidates available."}
-        save_report(settings, service.release, report_name, result)
+        save_report(settings, service.release, report_name, {**result, **provenance})
         return result
     output = metrics(run, qrels, settings.evaluation["recall_depth"])
     output.update(label_type="AI-judged", split=split, protocol=run["protocol"], annotation_model=config["model"],
                   candidates=sum(map(len, qrels.values())), disagreement_audit=audit,
                   audit_disagreements=sum(record["attempts"][0]["grade"] != record["attempts"][1]["grade"] for record in audit))
+    output.update(provenance)
+    if lab:
+        paired = [row for row in output["per_group"].values() if "bm25" in row and "pagerank" in row]
+        output["authority_paired"] = {"queries": len(paired), **{
+            method: statistics.mean(row[method]["nDCG@10"] for row in paired)
+            for method in ("bm25", "pagerank") if paired
+        }}
     reports = settings.path("artifacts") / "reports" / service.release.id
     write_csv(reports / f"{report_name}.csv", ("group", "method", "metric", "value"),
               ((group, method, metric, value) for group, methods in output["per_group"].items()

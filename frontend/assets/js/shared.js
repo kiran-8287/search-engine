@@ -204,7 +204,6 @@ export function resultItem(hit, { lab = false, judge, vote, preview } = {}) {
   heading.append(link(hit.title, hit.url));
   const text = resultSnippet(hit);
   const metadata = el("div", null, "result-meta");
-  if (lab) metadata.append(el("span", "#" + hit.rank + " · " + hit.score.toFixed(5), "technical"));
   if (hit.source === "stackoverflow") {
     const accepted = el("span", "✓ Accepted answer", "accepted");
     accepted.hidden = true;
@@ -225,7 +224,7 @@ export function resultItem(hit, { lab = false, judge, vote, preview } = {}) {
   row.append(header, heading);
   if (text.textContent) row.append(text);
   row.append(metadata);
-  if (lab) row.append(showJson("Score explanation", { contributions: hit.explanation, evidence: hit.evidence }));
+  if (lab) row.append(showJson("Score explanation", { rank: hit.rank, score: hit.score, contributions: hit.explanation }));
   return row;
 }
 

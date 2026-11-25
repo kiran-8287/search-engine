@@ -100,7 +100,9 @@ def parser():
         cmd = commands.add_parser(name, help=f"{name.capitalize()} a frozen development or sealed test split")
         cmd.add_argument("--split", required=True, choices=("dev", "test"))
         cmd.add_argument("--confirm-sealed", action="store_true")
-        cmd.add_argument("--ablations", action="store_true")
+        suite = cmd.add_mutually_exclusive_group()
+        suite.add_argument("--ablations", action="store_true")
+        suite.add_argument("--lab", action="store_true", help="Use the five Lab methods and paired BM25 + PageRank")
         if name == "evaluate":
             cmd.add_argument("--annotate", action="store_true", help="Explicitly send pooled evidence to the configured provider")
             cmd.add_argument("--limit", type=int, default=50, help="New pooled judgments allowed in this invocation")
@@ -120,21 +122,24 @@ def as_report(service, args):
     if len(workload) > 100 or any(len(query) > settings.search["query_length"] for query in workload):
         raise ValueError("Use a workload of at most 100 permitted queries.")
     output = {}
+    experiment_settings = evaluation.lab_settings(settings)
+
+    def save(name, report):
+        output[name] = experiments.save_report(settings, release, name, {**report, "lab_settings": experiment_settings})
+
     if args.suite in {"all", "compression"}:
-        report = experiments.compression_report(release, workload, args.repeats)
-        output["compression"] = experiments.save_report(settings, release, "compression", report)
+        save("compression", experiments.compression_report(release, workload, args.repeats))
     if args.suite in {"all", "taat-daat"}:
         measured = experiments.execution_report(service, workload, args.repeats)
-        output["taat-daat"] = experiments.save_report(settings, release, "taat-daat",
-                                                      {"queries": workload, "rows": measured, "repeats": args.repeats,
-                                                       "note": "Fresh readers reuse the OS file cache. Python tracing adds overhead."})
+        save("taat-daat", {"queries": workload, "rows": measured, "repeats": args.repeats,
+                           "equivalent": True, "ranker": "bm25",
+                           "note": "Fresh readers reuse the OS file cache. Memory tracing is measured separately."})
     if args.suite in {"all", "latent"}:
         latent = experiments.latent_report(service, args.sample, args.components, args.clusters,
                                            settings.default["resources"]["seed"], workload)
-        output["latent"] = experiments.save_report(settings, release, "latent", latent)
+        save("latent", latent)
     if args.suite in {"all", "retrieval"}:
-        output["retrieval"] = experiments.save_report(settings, release, "retrieval",
-                                                       experiments.retrieval_report(service, workload))
+        save("retrieval", experiments.retrieval_report(service, workload))
     return {name: {"release_id": item["release_id"], "created_at": item["created_at"]} for name, item in output.items()}
 
 
@@ -197,14 +202,14 @@ def dispatch(args, settings):
         return as_report(service, args)
     if name == "benchmark":
         sealed(args)
-        return evaluation.benchmark(settings, service, args.split, ablations=args.ablations)
+        return evaluation.benchmark(settings, service, args.split, ablations=args.ablations, lab=args.lab)
     if name == "evaluate":
         sealed(args)
         if not 1 <= args.limit <= 200:
             raise ValueError("Use an annotation budget between 1 and 200 judgments.")
         with pipeline.writer_lock(settings.root):
             return evaluation.evaluate(settings, service, args.split, annotate=args.annotate,
-                                       limit=args.limit, ablations=args.ablations)
+                                       limit=args.limit, ablations=args.ablations, lab=args.lab)
     raise ValueError("Unknown command.")
 
 

@@ -279,6 +279,95 @@ def test_lab_report_archive_is_explicit_and_validates_attribution(settings, rele
         assert f"benchmark-dev-{archived.id}.json" in export.headers["Content-Disposition"]
 
 
+def test_lab_uses_only_compatible_measurements_and_matching_judgments(settings, release):
+    from types import SimpleNamespace
+
+    from techsearch.evaluation import LAB_DESIGNS, LAB_PROTOCOL, lab_settings
+    from techsearch.experiments import save_report
+    from techsearch.io import ROUTER_VERSION, digest, write_json
+
+    groups = [{"split": "dev"}, {"split": "test"}]
+    catalog = {"group_fingerprint": digest(groups), "groups": groups}
+    write_json(settings.path("data") / "evaluation/frozen.json", catalog)
+
+    def measurement(target, split, **overrides):
+        report = {"release_id": target.id, "split": split, "lab_protocol": LAB_PROTOCOL, "router": ROUTER_VERSION,
+                  "run_id": "fixture-" + split, "methods": LAB_DESIGNS, "lab_settings": lab_settings(settings),
+                  "protocol": catalog["group_fingerprint"], "query_count": 1, "paired_queries": 1}
+        save_report(settings, target, "lab-" + split, {**report, **overrides})
+
+    measurement(SimpleNamespace(id="a" * 24), "test")
+    with TestClient(create_app(settings)) as client:
+        def selected():
+            answer = client.get("/api/v1/lab")
+            assert answer.status_code == 200 and answer.headers["cache-control"] == "no-store"
+            return answer.json()
+
+        assert selected()["measurement"] is None
+        measurement(release, "dev")
+        measurement(release, "test", protocol="different-query-catalog")
+        assert selected()["measurement"]["split"] == "dev"
+        measurement(release, "test", lab_settings="different-settings")
+        assert selected()["measurement"]["split"] == "dev"
+        measurement(release, "test")
+        assert selected()["measurement"]["split"] == "test"
+        for run_id in ("old-run", "fixture-test"):
+            save_report(settings, release, "evaluation-lab-test", {"split": "test", "measurement_run_id": run_id,
+                        "protocol": catalog["group_fingerprint"], "status": "blocked", "pending": 3})
+            quality = selected()["quality"]
+            if run_id == "fixture-test":
+                assert quality["pending"] == 3
+            else:
+                assert quality is None
+        export = client.get("/api/v1/exports/reports/lab-test")
+        assert export.status_code == 200 and export.json()["report"]["run_id"] == "fixture-test"
+
+
+def test_lab_benchmark_pairs_timings_and_pools_judgments(service, monkeypatch):
+    from techsearch.evaluation import LAB_METHODS, annotation_key, benchmark, evaluate
+    from techsearch.io import digest, read_json, write_json
+    from techsearch.query import QueryError
+
+    settings = service.settings
+    frozen = {"groups": [
+        {"split": "dev", "id": query, "query": query, "class": "natural-language"} for query in ("ok", "unsupported")
+    ]}
+    frozen["group_fingerprint"] = digest(frozen["groups"])
+    write_json(settings.path("data") / "evaluation/frozen.json", frozen)
+    calls = []
+
+    def search(query, **options):
+        calls.append((query, options))
+        if options.get("ranker") == "likelihood" and query == "unsupported":
+            raise QueryError("Fixture syntax restriction.")
+        return {"results": [{"id": PROMISE}], "mode": options["mode"], "warnings": [], "trace": {"fallback": None}}
+
+    monkeypatch.setattr(service, "search", search)
+    report = benchmark(settings, service, "dev", lab=True)["report"]
+    assert report["query_count"] == 2 and report["paired_queries"] == 1
+    assert report["outcomes"]["likelihood"]["unavailable"] == 1
+    assert {report["timing_ms"][method]["warm"]["observations"] for method in LAB_METHODS} == {1}
+    assert calls[:6] == [("browser event propagation", options) for options in (
+        {"mode": "keyword", "ranker": "tfidf"}, {"mode": "keyword"},
+        {"mode": "keyword", "ranker": "likelihood"}, {"mode": "semantic"}, {"mode": "hybrid"},
+        {"mode": "keyword", "authority": True},
+    )]
+    result = evaluate(settings, service, "dev", lab=True)
+    assert result["status"] == "blocked" and result["pending"] == 1 and result["labeled"] == 0
+    saved = read_json(settings.path("artifacts") / "reports" / service.release.id / "evaluation-lab-dev.json")
+    assert saved["report"]["measurement_run_id"] == report["run_id"]
+    key = annotation_key(service.release.id, frozen["group_fingerprint"], settings.evaluation["annotation"],
+                         frozen["groups"][0], PROMISE)
+    write_json(settings.path("data") / "evaluation" / "annotations" / key[:2] / (key + ".json"),
+               {"group": "ok", "document": PROMISE, "grade": 3, "attempts": [{"grade": 3}]})
+    graded = evaluate(settings, service, "dev", lab=True)["report"]
+    assert graded["label_type"] == "AI-judged" and graded["candidates"] == 1
+    for method in LAB_METHODS:
+        assert graded["sample_counts"][method] == 1
+        values = graded["aggregates"][method]
+        assert (values["nDCG@10"], values["P@10"], values["MRR@10"]) == (1, .1, 1)
+
+
 def test_demo_bundle_uses_portable_paths_and_keeps_reports_local(settings, release, tmp_path):
     import shutil
     from pathlib import Path

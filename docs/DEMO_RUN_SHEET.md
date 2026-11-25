@@ -1,7 +1,8 @@
 # Local demo run sheet
 
 Use `artifacts/techsearch-demo-250a15ecd349951d6c69364c-share.zip` for
-release `250a15ecd349951d6c69364c` with the current seven-section IR Lab.
+release `250a15ecd349951d6c69364c` with the earlier seven-section IR Lab.
+The source checkout uses the [three-tab IR Lab](IR_LAB.md).
 The archive is local. Ask the maintainer for the ZIP and its SHA-256.
 The ZIP supplies already built search assets. Use the repository clone if you
 want to work with the raw source exports or build indexes yourself.

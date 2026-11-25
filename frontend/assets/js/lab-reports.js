@@ -1,441 +1,287 @@
-import { api, el, showJson } from "./shared.js";
+import { api, el } from "./shared.js";
 
-const number = new Intl.NumberFormat();
-const count = (value) => Number.isFinite(value) ? number.format(value) : "Unavailable";
-const bytes = (value) => Number.isFinite(value) ? count(value) + " bytes" : "Unavailable";
-const ms = (value) => Number.isFinite(value) ? value.toFixed(2) + " ms" : "Unavailable";
-const methods = { auto: "Auto", bm25: "BM25", tfidf: "TF-IDF cosine", dense: "Semantic",
-  hybrid: "Hybrid", likelihood: "Dirichlet likelihood", authority: "Auto with MDN authority",
-  mmr: "Auto with MMR" };
-const labelFor = (name) => methods[name] || name;
-const codecs = { uint32: "Fixed-width", vb: "Variable-byte", gamma: "Gamma" };
+export const METHODS = { tfidf: "TF-IDF", bm25: "BM25", likelihood: "Query likelihood", dense: "Semantic", hybrid: "Hybrid" };
+const integer = new Intl.NumberFormat();
+const dash = "—";
+const fixed = (value, places = 2) => Number.isFinite(value) ? value.toFixed(places) : dash;
+const count = value => Number.isFinite(value) ? integer.format(value) : dash;
+const mib = bytes => Number.isFinite(bytes) ? fixed(bytes / 1048576) : dash;
+export const milliseconds = value => Number.isFinite(value) ? fixed(value) + " ms" : dash;
 
-const statusNames = {
-  "available": "Saved report",
-  "build-only": "Build statistics",
-  "not-run": "Not generated",
-  "blocked": "Blocked",
-  "partial": "Judgments incomplete",
-  "invalid": "Report data unavailable",
-};
-
-const groups = [
-  ["Compare searches", ["retrieval"]],
-  ["Speed & execution", ["taat-daat", "benchmark-dev", "benchmark-test"]],
-  ["Compression", ["compression"]],
-  ["Link analysis", ["graph"]],
-  ["Topics & clusters", ["latent"]],
-  ["Evaluation", ["evaluation-dev", "evaluation-test", "ablations-dev", "ablations-test",
-    "evaluation-ablations-dev", "evaluation-ablations-test"]],
-];
-
-function table(parent, name, headers, rows) {
-  if (!rows.length) return;
-  const frame = el("div", null, "table-scroll");
-  if (headers.length === 2) frame.classList.add("fact-table");
-  frame.tabIndex = 0;
-  frame.setAttribute("role", "region");
-  frame.setAttribute("aria-label", name);
-  const element = el("table");
-  const header = element.createTHead().insertRow();
-  for (const label of headers) {
-    const cell = el("th", label);
-    cell.scope = "col";
-    header.append(cell);
+function table(label, columns, rows) {
+  const scroller = el("div", null, "table-scroll");
+  scroller.tabIndex = 0;
+  scroller.setAttribute("role", "region");
+  scroller.setAttribute("aria-label", label);
+  const grid = el("table");
+  grid.setAttribute("aria-label", label);
+  const header = grid.createTHead().insertRow();
+  for (const name of columns) {
+    const th = el("th", name);
+    th.scope = "col";
+    header.append(th);
   }
-  element.prepend(el("caption", name, "sr-only"));
-  const body = element.createTBody();
+  const body = grid.createTBody();
   for (const values of rows) {
     const row = body.insertRow();
-    for (const value of values) row.append(el("td", value ?? "Unavailable"));
+    values.forEach((value, index) => {
+      const cell = el(index === 0 ? "th" : "td", value);
+      if (!index) cell.scope = "row";
+      row.append(cell);
+    });
   }
-  frame.append(element);
-  parent.append(frame);
+  scroller.append(grid);
+  return scroller;
 }
 
-function facts(parent, name, rows) {
-  table(parent, name, ["Measure", "Value"], rows.filter(([, value]) => value != null));
+function detail(label, ...children) {
+  const details = el("details", null, "report-details");
+  details.append(el("summary", label), ...children);
+  return details;
 }
 
-function reportPath(name, releaseId, exportReport = false) {
-  return (exportReport ? "/exports/reports/" : "/reports/") + name +
-    "?release=" + encodeURIComponent(releaseId);
-}
-
-async function readReport(name, releaseId, signal) {
-  try {
-    const saved = await api(reportPath(name, releaseId), { signal });
-    if (saved.release_id === releaseId && saved.name === name) return saved;
-    throw new Error("The returned report does not match the selected release.");
-  } catch (error) {
-    if (signal.aborted) throw error;
-    return { name, release_id: releaseId, status: "invalid", error: error.message };
-  }
-}
-
-function reportBlock(parent, title, saved) {
-  const block = el("section", null, "report-block");
-  const head = el("div", null, "report-heading");
-  const exportLink = el("a", "Export JSON");
-  exportLink.href = "/api/v1" + reportPath(saved.name, saved.release_id, true);
-  head.append(el("h3", title), exportLink);
-  block.append(head);
-  const details = [statusNames[saved.status], saved.created_at];
-  if (saved.config_fingerprint) details.push("Config " + saved.config_fingerprint);
-  block.append(el("p", details.filter(Boolean).join(" · "), "report-meta"));
-  parent.append(block);
-  return block;
-}
-
-function finishReport(block, saved) {
-  block.append(showJson("Report details", saved.report));
-  if (saved.configuration) block.append(showJson("Saved configuration", saved.configuration));
-}
-
-function emptyState(parent, missing, historical, steps) {
-  if (!missing.length) return;
-  const note = el("div", null, "report-notice");
-  for (const [label, saved] of missing) {
-    if (saved.status === "not-run") {
-      note.append(el("p", label + " has not been generated for " + (historical ? "this historical release." : "the active release.")));
-    } else {
-      note.append(el("p", label + " is unavailable. " + (saved.error || "Check the saved report.")));
-    }
-  }
-  if (historical) {
-    note.append(el("p", "Choose the active release to see its reports and generation steps."));
-  } else if (steps?.length) {
-    note.append(el("p", "To generate the missing report, run from the project environment."));
-    if (steps.some((step) => step.includes("--confirm-sealed"))) {
-      note.append(el("p", "Finalize settings on Development before running the held-out Test split."));
-    }
-    for (const step of steps) {
-      const command = el("pre", null, "report-command");
-      command.append(el("code", step));
-      note.append(command);
-    }
-  }
-  parent.append(note);
-}
-
-function present(saved) {
-  return saved.status !== "invalid" && saved.status !== "not-run";
-}
-
-async function overview(parent, inventory, signal) {
-  const index = await api("/index", { signal });
-  if (index.release_id !== inventory.active_release_id) throw new Error("The active release changed. Reload the Lab.");
-  const dense = index.dense;
-  facts(parent, "Index summary", [
-    ["Active release", index.release_id],
-    ["Documents", count(index.lexical.parents)],
-    ["Vocabulary", count(index.lexical.vocabulary)],
-    ["Postings", count(index.lexical.postings)],
-    ["Passages", dense ? count(dense.passages) : "Unavailable"],
-    ["Lexical index", "Available"],
-    ["Dense index", dense ? "Available" : "Unavailable"],
-    ["Release artifacts", bytes(index.artifact_bytes)],
-    ["Vector file (included above)", dense ? bytes(dense.bytes) : null],
-  ]);
-  parent.append(el("p", "Release size is the sum of the files listed in its manifest. It includes all shipped posting encodings and excludes the manifest itself, the model, raw exports, and run reports.", "lab-intro"));
-  parent.append(el("h3", "Active release report status"));
-  table(parent, "Saved experiment status", ["Section", "Status"], groups.map(([label, names]) => {
-    const statuses = names.map((name) => inventory.releases[index.release_id]?.[name]);
-    const notes = [];
-    const saved = statuses.filter((status) => status === "available").length;
-    if (saved) notes.push(saved + (saved === 1 ? " saved report" : " saved reports"));
-    if (statuses.includes("build-only")) notes.push("Build statistics available");
-    if (statuses.includes("blocked") || statuses.includes("partial")) notes.push("Judgments pending");
-    if (statuses.includes("invalid")) notes.push("Report data unavailable");
-    const missing = statuses.filter((status) => !status || status === "not-run").length;
-    if (missing) notes.push(missing === names.length ? "No saved reports" : "Some reports not generated");
-    return [label, notes.join(" · ")];
-  }));
-}
-
-function renderCompression(parent, saved, context) {
-  const command = "python -m techsearch experiments --suite compression";
-  if (!present(saved)) return emptyState(parent, [["Compression comparison", saved]], context.historical, [command]);
-  const block = reportBlock(parent, "Posting representations", saved);
-  const values = saved.report.codecs || {};
-  const entries = Object.entries(codecs).filter(([name]) => values[name]);
-  const max = Math.max(1, ...entries.map(([name]) => values[name].artifact_bytes));
-  const chart = el("div", null, "chart");
-  chart.append(el("p", "Complete size of postings and dictionary"));
-  for (const [name, label] of entries) {
+function chart(title, bars, maximum, format) {
+  const figure = el("figure", null, "chart");
+  figure.append(el("figcaption", title));
+  for (const [label, value] of bars) {
     const row = el("div", null, "chart-row");
     const bar = el("progress");
-    bar.max = max;
-    bar.value = values[name].artifact_bytes;
-    bar.setAttribute("aria-label", label + " artifact size");
-    row.append(el("span", label), bar, el("span", bytes(bar.value)));
-    chart.append(row);
+    bar.max = maximum || 1;
+    bar.value = value;
+    bar.setAttribute("aria-label", label);
+    row.append(el("span", label), bar, el("span", format(value)));
+    figure.append(row);
   }
-  block.append(chart);
-  table(block, "Compression sizes", ["Representation", "Postings payload", "Dictionary", "Complete size"], entries.map(([name, label]) => {
-    const stats = values[name];
-    return [label, bytes(stats.payload_bytes), bytes(stats.metadata_bytes), bytes(stats.artifact_bytes)];
-  }));
-  const measured = entries.filter(([name]) => Number.isFinite(values[name].median_lookup_decode_ms));
-  if (measured.length) {
-    const repeats = count(saved.report.repeats);
-    const terms = count(saved.report.terms?.length);
-    block.append(el("p", "Saved lookup and decoding measurement · " + terms + " terms · " + repeats + " repeats."));
-    table(block, "Lookup and decode timings", ["Representation", "Median"], measured.map(([name, label]) =>
-      [label, ms(values[name].median_lookup_decode_ms)]));
+  return figure;
+}
+
+const metricKeys = ["nDCG@10", "P@10", "MRR@10"];
+function validQuality(run, quality) {
+  return Boolean(run && quality && ["AI-judged", "human", "mixed"].includes(quality.label_type) &&
+    Object.keys(METHODS).every(key => quality.sample_counts?.[key] === run.paired_queries &&
+      metricKeys.every(metric => {
+        const value = quality.aggregates?.[key]?.[metric];
+        return Number.isFinite(value) && value >= 0 && value <= 1;
+      })));
+}
+
+function leaders(entries, places, descending) {
+  const rounded = entries.map(([name, value]) => [name, Number(value.toFixed(places))]);
+  const best = (descending ? Math.max : Math.min)(...rounded.map(([, value]) => value));
+  return rounded.filter(([, value]) => value === best).map(([name]) => name);
+}
+
+export function models({ documents, measurement: run, quality, search_settings: settings }) {
+  const content = el("div");
+  const rated = validQuality(run, quality);
+  const timings = run?.timing_ms || {};
+  const methods = Object.entries(METHODS);
+  if (run) {
+    const split = run.split === "test" ? "Final test" : "Development";
+    const judged = rated ? { "AI-judged": "AI-judged", human: "Human judgments", mixed: "Mixed judgments" }[quality.label_type]
+      : "Quality evaluation is pending";
+    content.append(el("p", [
+      count(documents) + " documents", count(run.paired_queries) + " of " + count(run.query_count) + " queries",
+      split, run.created_at.slice(0, 10), judged,
+    ].join(" · "), "measurement-note"));
   } else {
-    emptyState(block, [["The lookup and decode comparison", { status: "not-run" }]], context.historical, [command]);
-  }
-  finishReport(block, saved);
-}
-
-function benchmarkTables(block, report) {
-  const outcomes = Object.entries(report.outcomes || {});
-  const firstMethod = outcomes[0]?.[1];
-  const workload = firstMethod ? (firstMethod.ok ?? 0) + (firstMethod.unavailable ?? 0) : null;
-  facts(block, "Benchmark settings", [
-    ["Run ID", report.run_id], ["Query groups", count(workload)], ["Repeats", count(report.repeats)],
-    ["Candidates per method", count(report.candidate_depth)],
-    ["Peak process resident memory", bytes(report.benchmark_peak_process_rss_bytes)],
-    ["Query protocol", report.protocol], ["Cache conditions", report.latency_note],
-  ]);
-  table(block, "Benchmark outcomes", ["Method", "Completed", "Degraded¹", "Unavailable"], outcomes.map(([method, values]) =>
-    [labelFor(method), count(values.ok ?? 0), count(values.degraded ?? 0), count(values.unavailable ?? 0)]));
-  if (outcomes.length) block.append(el("p", "¹ A degraded query completed using a fallback. It is included in Completed.", "report-meta"));
-  const timings = [];
-  for (const [method, passes] of Object.entries(report.timing_ms || {})) {
-    for (const [pass, stats] of Object.entries(passes)) {
-      const condition = pass === "first-query-pass" ? "First pass" : "Later passes";
-      timings.push([labelFor(method), condition, ms(stats.p50), ms(stats.p95), count(stats.observations)]);
-    }
-  }
-  table(block, "Repeated benchmark timings", ["Method", "Pass", "Median", "95th percentile", "Samples"], timings);
-}
-
-function splitCommand(command, split, ablations = false) {
-  return "python -m techsearch " + command + " --split " + split +
-    (ablations ? " --ablations" : "") + (split === "test" ? " --confirm-sealed" : "");
-}
-
-function renderSpeed(parent, benchmark, traversal, context) {
-  parent.append(el("p", "Latency is elapsed search time. The median is the middle observation; the 95th percentile shows the slower end. Memory and work counts describe execution, while judged quality appears under Evaluation.", "lab-intro"));
-  const missing = [];
-  const commands = [];
-  if (present(benchmark)) {
-    const block = reportBlock(parent, "Repeated benchmark", benchmark);
-    benchmarkTables(block, benchmark.report);
-    finishReport(block, benchmark);
-  } else {
-    missing.push(["The repeated search benchmark", benchmark]);
-    commands.push(splitCommand("benchmark", context.split));
-  }
-  if (present(traversal)) {
-    const block = reportBlock(parent, "Term-at-a-time and document-at-a-time", traversal);
-    const report = traversal.report;
-    block.append(el("p", "This check verifies identical result IDs, order and scores for its own query workload, independent of the selected split. It also measures elapsed time and work for each traversal."));
-    facts(block, "Traversal workload", [
-      ["Queries", report.queries?.join(" · ")], ["Repeats", count(report.repeats)], ["Reader and cache conditions", report.note],
-    ]);
-    block.append(el("p", "Postings visited counts entries considered. Accumulators track scores or pending lists. Peak Python memory is the traced allocation for a run."));
-    const rows = (report.rows || []).map((row) => [
-      row.query, row.condition === "fresh-index-reader" ? "Fresh reader" : "Reused reader",
-      row.strategy?.toUpperCase(), ms(row.p50_ms), ms(row.p95_ms),
-      count(row.work?.postings_visited), count(row.work?.comparisons), count(row.work?.peak_accumulators),
-      bytes(row.traced_python_peak_bytes),
-    ]);
-    table(block, "Execution timings", ["Query", "Condition", "Strategy", "Median", "95th percentile",
-      "Postings visited", "Comparisons", "Peak accumulators", "Peak Python memory"], rows);
-    finishReport(block, traversal);
-  } else {
-    missing.push(["The TAAT/DAAT timing and equivalence check", traversal]);
-    commands.push("python -m techsearch experiments --suite taat-daat");
-  }
-  emptyState(parent, missing, context.historical, commands);
-}
-
-function renderRetrieval(parent, saved, context) {
-  const secondary = el("details", null, "report-details");
-  secondary.append(el("summary", "Saved ranker & feedback experiments"));
-  secondary.append(el("p", "These experiments record the effect of authority, diversification (MMR), and a Rocchio query-expansion probe. Live session feedback can be tried on Search.", "lab-intro"));
-  if (!present(saved)) {
-    emptyState(secondary, [["The saved ranker and feedback comparison", saved]], context.historical,
-      ["python -m techsearch experiments --suite retrieval"]);
-  } else {
-    const block = reportBlock(secondary, "Saved interventions", saved);
-    const report = saved.report;
-    if (report.label_policy) block.append(el("p", report.label_policy));
-    const rows = (report.rows || []).map(({ query, methods: values }) => [
-      query, values.bm25?.hits?.[0]?.id, values.likelihood?.hits?.[0]?.id,
-      values.pagerank?.hits?.[0]?.id, values.mmr?.hits?.[0]?.id, values.rocchio_probe?.expansion?.join(", ") || "—",
-    ]);
-    table(block, "Ranking interventions", ["Query", "BM25 first hit", "Likelihood first hit",
-      "Authority first hit", "MMR first hit", "Rocchio expansion"], rows);
-    finishReport(block, saved);
-  }
-  parent.append(secondary);
-}
-
-function renderLinks(parent, graph, retrieval, context) {
-  parent.append(el("p", "PageRank passes weight along links between MDN pages. Optional authority reranking reorders MDN hits within the configured result window. A rank change alone does not establish relevance.", "lab-intro"));
-  const missing = [];
-  const commands = [];
-  if (present(graph)) {
-    const block = reportBlock(parent, "MDN link graph", graph);
-    const report = graph.report;
-    facts(block, "Graph summary", [
-      ["MDN pages", count(report.parents)], ["Retained edges", count(report.retained_edges)],
-      ["Isolates (no incoming or outgoing links)", count(report.isolates)],
-      ["Dangling nodes (no outgoing links)", count(report.dangling)], ["PageRank damping", report.damping],
-      ["PageRank iterations", count(report.iterations)], ["Final change", report.residual?.toExponential(3)],
-      ["Convergence tolerance", report.tolerance?.toExponential(3)],
-    ]);
-    finishReport(block, graph);
-  } else {
-    missing.push(["The link graph", graph]);
-    commands.push("python -m techsearch build-graph");
-  }
-  if (present(retrieval)) {
-    const block = reportBlock(parent, "Saved authority comparison", retrieval);
-    const rows = (retrieval.report.rows || []).map(({ query, methods: values }) =>
-      [query, values.bm25?.hits?.[0]?.id, values.pagerank?.hits?.[0]?.id]);
-    table(block, "Authority comparison", ["Query", "BM25 first hit", "BM25 with authority first hit"], rows);
-    finishReport(block, retrieval);
-  } else {
-    missing.push(["The authority comparison", retrieval]);
-    commands.push("python -m techsearch experiments --suite retrieval");
-  }
-  emptyState(parent, missing, context.historical, commands);
-}
-
-function renderTopics(parent, saved, context) {
-  parent.append(el("p", "These academic experiments use a sample of documents. LSI reduces the term space to fewer dimensions, and K-means groups similar document vectors.", "lab-intro"));
-  if (!present(saved)) return emptyState(parent, [["The sampled LSI and K-means report", saved]], context.historical,
-    ["python -m techsearch experiments --suite latent"]);
-  const block = reportBlock(parent, "Saved LSI and K-means sample", saved);
-  const report = saved.report;
-  const lsi = report.lsi || {};
-  const clusters = report.kmeans || {};
-  facts(block, "Topic and cluster diagnostics", [
-    ["Sampled documents", count(report.sample_ids?.length)], ["Sample vocabulary", count(report.vocabulary)],
-    ["LSI dimensions", count(lsi.dimensions)], ["Explained variance ratio", lsi.explained_variance_ratio?.toFixed(4)],
-    ["Requested clusters", count(clusters.clusters)], ["Effective clusters", count(clusters.effective_clusters)],
-    ["Inertia (within-cluster spread)", clusters.inertia?.toFixed(3)],
-    ["Silhouette (cluster separation)", clusters.silhouette?.toFixed(3) ?? "Unavailable"],
-  ]);
-  table(block, "Cluster sizes", ["Cluster", "Documents"], Object.entries(clusters.sizes || {}).map(([id, size]) => [id, count(size)]));
-  finishReport(block, saved);
-}
-
-function evaluationReport(block, saved) {
-  const report = saved.report;
-  if (saved.status === "blocked" || saved.status === "partial") {
-    const notice = el("div", null, "report-notice");
-    notice.append(el("p", "Relevance metrics unavailable. " + (report.reason || "The judgment pool is incomplete.")));
-    if (Number.isFinite(report.pending)) notice.append(el("p", count(report.pending) + " pending judgments."));
-    notice.append(el("p", "Complete the judgment pool for this exact release, split and run before reporting metrics."));
-    block.append(notice, showJson("Evaluation status", report));
-    if (saved.configuration) block.append(showJson("Saved configuration", saved.configuration));
-    return;
-  }
-  const aggregates = Object.entries(report.aggregates || {});
-  const metrics = [...new Set(aggregates.flatMap(([, values]) => Object.keys(values)))];
-  block.append(el("p", aggregates.length ? "AI-judged relevance" : "Relevance metrics unavailable."));
-  table(block, "Relevance metrics", ["Method", ...metrics], aggregates.map(([method, values]) =>
-    [labelFor(method), ...metrics.map((metric) => values[metric]?.toFixed(3))]));
-  finishReport(block, saved);
-}
-
-function evaluationProtocol(parent, context, inventory) {
-  const protocol = inventory.protocol;
-  parent.append(el("p", "Use Development to choose settings. Keep Test held out until settings are final. Opening a saved Test report here only reads existing results.", "lab-intro"));
-  parent.append(el("h3", "Current local protocol"));
-  if (context.historical) parent.append(el("p", "These are the catalog and settings in this workspace. Archived runs record the protocol they actually used.", "lab-intro"));
-  facts(parent, "Evaluation protocol", [
-    ["Frozen query groups for this split", count(protocol.groups?.[context.split])],
-    ["Catalog fingerprint", protocol.fingerprint ?? "Unavailable"],
-    ["Judgment pool depth", count(protocol.pool_depth)], ["Pooled recall depth", count(protocol.recall_depth)],
-    ["Benchmark repeats", count(protocol.latency_repeats)],
-  ]);
-  parent.append(el("p", "Relevance requires a completed judgment pool. It measures P@5, P@10, nDCG@10, MRR@10 and pooled recall. Missing judgments leave these metrics unavailable."));
-  parent.append(el("h3", "Selected release and split"));
-  const availability = inventory.releases[context.releaseId] || {};
-  table(parent, "Evaluation report status", ["Report", "Status"], [
-    ["Repeated benchmark", "benchmark"], ["Judged relevance", "evaluation"],
-    ["Feature comparison run", "ablations"], ["Feature comparison relevance", "evaluation-ablations"],
-  ].map(([label, name]) => [label, statusNames[availability[name + "-" + context.split] || "not-run"]]));
-}
-
-export async function renderReports(state, inventory, signal) {
-  const content = document.createDocumentFragment();
-  if (state.section === "overview") {
-    await overview(content, inventory, signal);
-    return content;
+    content.append(el("p", "No compatible measurements are available for the current search data.", "measurement-note"));
   }
 
-  const releaseId = state.release || inventory.active_release_id;
-  const context = { releaseId, split: state.split, historical: releaseId !== inventory.active_release_id };
-  const provenance = el("p", (context.historical ? "Historical release " : "Active release ") +
-    releaseId, context.historical ? "report-release historical" : "report-release");
-  content.append(provenance);
-  const get = (name) => readReport(name, releaseId, signal);
+  const timing = (key, stat) => timings[key]?.warm?.[stat];
+  content.append(table("Retrieval methods", ["Method", "nDCG@10 ↑", "Precision@10 ↑", "MRR@10 ↑", "Median time (ms) ↓", "95th percentile (ms) ↓"],
+    methods.map(([key, label]) => [
+      label, ...metricKeys.map(metric => fixed(rated ? quality.aggregates[key][metric] : null, 3)),
+      fixed(timing(key, "p50")), fixed(timing(key, "p95")),
+    ])));
 
-  switch (state.section) {
-    case "compare":
-      renderRetrieval(content, await get("retrieval"), context);
-      break;
-    case "speed": {
-      const reports = await Promise.all([get("benchmark-" + state.split), get("taat-daat")]);
-      renderSpeed(content, ...reports, context);
-      break;
-    }
-    case "compression":
-      renderCompression(content, await get("compression"), context);
-      break;
-    case "links": {
-      const reports = await Promise.all([get("graph"), get("retrieval")]);
-      renderLinks(content, ...reports, context);
-      break;
-    }
-    case "topics":
-      renderTopics(content, await get("latent"), context);
-      break;
-    case "evaluation": {
-      if (state.view === "protocol") {
-        evaluationProtocol(content, context, inventory);
-        break;
+  const scores = rated ? methods.map(([key, label]) => [label, quality.aggregates[key]["nDCG@10"]]) : [];
+  const speed = methods.filter(([key]) => Number.isFinite(timing(key, "p50")))
+    .map(([key, label]) => [label, timing(key, "p50")]);
+  if (scores.length || speed.length) {
+    const charts = el("div", null, "metric-charts");
+    if (scores.length) charts.append(chart("Ranking quality by method (nDCG@10)", scores, 1, value => fixed(value, 3)));
+    if (speed.length) charts.append(chart("Median search time by method", speed, Math.max(...speed.map(([, value]) => value)), milliseconds));
+    content.append(charts);
+  }
+
+  if (speed.length === methods.length) {
+    const fastest = leaders(speed, 2, false);
+    const findings = el("div", null, "lab-findings");
+    findings.append(el("p", "Lowest measured median time · " + fastest.join(" and ") + "."));
+    const tail = methods.filter(([key]) => Number.isFinite(timing(key, "p95")))
+      .map(([key, label]) => [label, timing(key, "p95")]);
+    if (tail.length === methods.length) {
+      const lowestTail = leaders(tail, 2, false);
+      if (lowestTail.join() !== fastest.join()) {
+        findings.append(el("p", "Lowest measured 95th-percentile time · " + lowestTail.join(" and ") + "."));
       }
-      const steps = [];
-      const missing = [];
-      if (state.view === "features") {
-        content.append(el("p", "Feature comparisons (ablations) change one component at a time under the same comparison conditions. Saved execution results and judged relevance measure different things.", "lab-intro"));
-        const [run, relevance] = await Promise.all([get("ablations-" + state.split), get("evaluation-ablations-" + state.split)]);
-        if (present(run)) {
-          const block = reportBlock(content, "Feature comparison execution", run);
-          benchmarkTables(block, run.report);
-          finishReport(block, run);
-        } else {
-          missing.push(["The feature comparison run", run]);
-          steps.push(splitCommand("benchmark", state.split, true));
-        }
-        if (present(relevance)) evaluationReport(reportBlock(content, "Feature comparison relevance", relevance), relevance);
-        else {
-          missing.push(["Judged feature comparison metrics", relevance]);
-          steps.push(splitCommand("evaluate", state.split, true));
-        }
-      } else {
-        content.append(el("p", "Relevance metrics measure the quality of results using a completed pool of judgments. Missing judgments leave metrics unavailable.", "lab-intro"));
-        const saved = await get("evaluation-" + state.split);
-        if (present(saved)) evaluationReport(reportBlock(content, "Judged relevance", saved), saved);
-        else {
-          missing.push(["The judged relevance report", saved]);
-          const available = inventory.releases[releaseId]?.["benchmark-" + state.split];
-          if (available !== "available") steps.push(splitCommand("benchmark", state.split));
-          steps.push(splitCommand("evaluate", state.split));
-        }
-      }
-      emptyState(content, missing, context.historical, steps);
-      break;
     }
+    if (rated) {
+      const highest = leaders(scores, 3, true);
+      findings.append(el("p", "Highest measured nDCG@10 · " + highest.join(" and ") + "."));
+      if (highest.length === 1 && fastest.length === 1 && highest[0] !== fastest[0]) {
+        findings.append(el("p", "The method with the highest observed ranking quality took " +
+          milliseconds(speed.find(([name]) => name === highest[0])[1] - speed.find(([name]) => name === fastest[0])[1]) +
+          " longer at the median than the fastest method."));
+      }
+      findings.append(el("p", "These are observations on this query set. Small differences can vary across runs.", "rank-meta"));
+    }
+    content.append(findings);
+  }
+
+  content.append(detail("What the metrics mean",
+    table("Metric definitions", ["Metric", "Meaning"], [
+      ["nDCG@10", "How well the first ten results are ordered. More relevant results count more near the top."],
+      ["Precision@10", "The proportion of the first ten results graded relevant."],
+      ["MRR@10", "How early the first relevant result appears within the top ten."],
+      ["Median time", "Typical measured search time."],
+      ["95th percentile", "The slower end of the measured search times."],
+    ]),
+    el("p", "Judges grade relevance from 0 to 3. Grades 2 and 3 count as relevant for Precision and MRR.")));
+  if (run) {
+    const machine = run.machine || {};
+    const coverage = quality ? count(quality.labeled ?? quality.candidates) + " judged pairs, " + count(quality.pending ?? 0) + " pending" : "No matching judgment report";
+    const exportLink = el("a", "Export measurements");
+    exportLink.href = "/api/v1/exports/reports/lab-" + run.split;
+    const body = [
+      el("p", run.latency_note),
+      el("p", [machine.platform, machine.cpu, machine.logical_cores ? machine.logical_cores + " logical CPU cores" : "", machine.python ? "Python " + machine.python : ""].filter(Boolean).join(" · ")),
+      el("p", count(run.repeats) + (run.repeats === 1 ? " timed search" : " timed searches") +
+        " per method per query · candidate depth " + count(run.candidate_depth) + " · " + coverage),
+      el("p", settings ? "Up to " + count(settings.max_results) + " results per search. TAAT for lexical scoring, BM25 k₁ " +
+        settings.k1 + " and b " + settings.b + ", fusion constant " + settings.rrf_k + "." :
+        "The lexical methods use TAAT and the same query set."),
+      table("Search coverage", ["Method", "Successful", "Unavailable", "Degraded"],
+        methods.map(([key, label]) => {
+          const outcome = run.outcomes[key] || {};
+          return [label, count((outcome.ok ?? 0) - (outcome.degraded ?? 0)), count(outcome.unavailable ?? 0), count(outcome.degraded ?? 0)];
+        })),
+      el("p", "Timing uses only queries completed by all five methods. The saved run records each excluded query and its reason."),
+      exportLink,
+    ];
+    content.append(detail("Measurement details", ...body));
+  }
+  return { content, signature: JSON.stringify([documents, run?.run_id, quality?.pending, quality?.candidates,
+    rated ? quality.aggregates : null]) };
+}
+
+function midpoint(values) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length ? (sorted[middle] + sorted[Math.floor((sorted.length - 1) / 2)]) / 2 : null;
+}
+
+function traversal(report) {
+  if (!report?.rows?.length) return [el("p", "Traversal measurements are unavailable.")];
+  const fresh = report.rows.filter(row => row.condition === "fresh-index-reader");
+  const rows = ["taat", "daat"].map(strategy => {
+    const selected = fresh.filter(row => row.strategy === strategy);
+    const durations = selected.flatMap(row => row.timings_ms || []).sort((a, b) => a - b);
+    const postings = selected.map(row => row.work?.postings_visited).filter(Number.isFinite);
+    return [strategy.toUpperCase(), fixed(midpoint(durations)), fixed(durations[Math.ceil(durations.length * .95) - 1]),
+      count(midpoint(postings))];
+  });
+  return [
+    el("p", "Both strategies run BM25 on the same " + count(report.queries.length) + " queries."),
+    table("Traversal comparison", ["Strategy", "Median (ms)", "95th percentile (ms)", "Median postings visited"], rows),
+    el("p", report.equivalent ? "Result IDs, order, and scores agreed on these queries. Timing can vary by workload."
+      : "Result agreement is unavailable for this measurement."),
+  ];
+}
+
+function compression(report) {
+  const baseline = report?.codecs?.uint32?.artifact_bytes;
+  if (!baseline) return [el("p", "Compression measurements are unavailable.")];
+  const labels = { uint32: "Fixed-width", vb: "Variable-byte", gamma: "Gamma" };
+  const rows = Object.entries(labels).map(([key, label]) => {
+    const codec = report.codecs[key];
+    if (!codec) return [label, dash, dash, dash, dash];
+    return [label, mib(codec.payload_bytes), mib(codec.artifact_bytes),
+      fixed(100 * (baseline - codec.artifact_bytes) / baseline, 1) + "%", fixed(codec.median_lookup_decode_ms)];
+  });
+  return [
+    table("Index compression", ["Encoding", "Postings (MiB)", "Complete (MiB)", "Space saved", "Lookup and decode (ms)"], rows),
+    el("p", "Complete size includes the dictionary. Savings use fixed-width as the baseline. The smallest encoding can take longer to decode."),
+  ];
+}
+
+function authority(run, quality, graph) {
+  const timing = run?.authority_timing_ms;
+  const judged = validQuality(run, quality) && quality.authority_paired?.queries * run.repeats === timing?.bm25?.observations;
+  const methods = [["bm25", "BM25"], ["pagerank", "BM25 + PageRank"]];
+  const content = [
+    el("p", "PageRank reorders MDN results in the candidate window. Both runs use the same BM25 settings."),
+    table("Link authority comparison", ["Method", "nDCG@10", "Median time (ms)", "95th percentile (ms)"], methods.map(([method, name]) => [
+      name, fixed(judged ? quality.authority_paired[method] : null, 3), fixed(timing?.[method]?.p50), fixed(timing?.[method]?.p95),
+    ])),
+  ];
+  if (Number.isFinite(timing?.bm25?.p50) && Number.isFinite(timing?.pagerank?.p50)) {
+    const change = timing.pagerank.p50 - timing.bm25.p50;
+    const qualityChange = judged ? " The observed nDCG@10 change was " + fixed(quality.authority_paired.pagerank - quality.authority_paired.bm25, 3) + "." : " Quality evaluation is pending.";
+    content.push(el("p", "PageRank median time change · " + (change > 0 ? "+" : "") + fixed(change) + " ms." + qualityChange));
+  }
+  if (graph) {
+    content.push(detail("Graph details", table("MDN link graph", ["Measure", "Value"], [
+      ["Pages", count(graph.parents)], ["Links", count(graph.retained_edges)], ["Isolates", count(graph.isolates)],
+      ["Iterations", count(graph.iterations)], ["Final residual", Number.isFinite(graph.residual) ? graph.residual.toExponential(2) : dash],
+    ])));
   }
   return content;
+}
+
+function feedback(report) {
+  const pairs = (report?.rows || []).filter(row => row.methods.rocchio_probe?.probe_document).map(row => {
+    const probe = row.methods.rocchio_probe;
+    const withoutProbe = hits => hits.filter(hit => hit.id !== probe.probe_document);
+    return { row, probe, before: withoutProbe(row.methods.bm25.hits), after: withoutProbe(probe.hits) };
+  });
+  if (!pairs.length) return [el("p", "The feedback demonstration is unavailable.")];
+  const example = pairs.find(pair => pair.before[0]?.id !== pair.after[0]?.id) || pairs[0];
+  return [
+    el("p", "Demonstration using “" + example.row.query + "”. Rocchio expands the query using the top BM25 result as a test input. That input is omitted below."),
+    table("Feedback before and after", ["Rank after omitting the input", "Before", "After"], [0, 1, 2].map(i => [
+      String(i + 1), example.before[i]?.title ?? dash, example.after[i]?.title ?? dash,
+    ])),
+    el("p", "The change shows how feedback can affect a ranking. Independent relevance judgments would be needed to measure an improvement."),
+  ];
+}
+
+function clusters(report) {
+  if (!report?.kmeans || !report?.lsi) return [el("p", "The sampled document exploration is unavailable.")];
+  const { kmeans, lsi } = report;
+  return [
+    el("p", count(report.sample_ids?.length) + " sampled documents · " + count(lsi.dimensions) + " LSI dimensions · silhouette " + fixed(kmeans.silhouette, 3)),
+    table("Document clusters", ["Cluster", "Documents", "Representative terms"], Object.entries(kmeans.sizes).map(([key, size]) => [
+      "Cluster " + (Number(key) + 1), count(size), kmeans.representative_terms?.[key]?.join(", ") || dash,
+    ])),
+    el("p", "This explores document groupings. Silhouette measures separation within the sample."),
+  ];
+}
+
+export async function courseExperiments(context, signal) {
+  const content = el("div", null, "course-sections");
+  const kinds = ["taat-daat", "compression", "graph", "retrieval", "latent"];
+  const replies = await Promise.allSettled(kinds.map(kind => api("/reports/" + kind, { signal })));
+  const reports = replies.map(({ value }, index) => {
+    if (value?.release_id !== context.release_id) return null;
+    if (value.status === "build-only" || kinds[index] === "graph" || value.config_fingerprint === context.configuration ||
+      (context.experiment_settings && value.report?.lab_settings === context.experiment_settings)) return value;
+    return null;
+  });
+  const [taat, codecs, graph, retrieval, latent] = reports.map(value => value?.report);
+  const sections = [
+    ["TAAT versus DAAT", traversal(taat), true],
+    ["Compression", compression(codecs), true],
+    ["Link authority", authority(context.measurement, context.quality, graph)],
+    ["Feedback", feedback(retrieval)],
+    ["LSI and K-means", clusters(latent)],
+  ];
+  for (const [title, body, open] of sections) {
+    const disclosure = detail(title, ...body);
+    disclosure.open = Boolean(open);
+    content.append(disclosure);
+  }
+  return { content, signature: JSON.stringify([reports.map(value => value?.created_at ?? value?.status),
+    context.measurement?.run_id, context.quality?.candidates]) };
 }

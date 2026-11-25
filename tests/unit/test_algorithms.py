@@ -9,7 +9,7 @@ from techsearch.evaluation import scores
 from techsearch.graph import pagerank
 from techsearch.indexing import Index
 from techsearch.preprocessing import analyze
-from techsearch.query import Operator, QueryError, edit_distance, lex, parse
+from techsearch.query import FIELD_ID, Matcher, Operator, QueryError, edit_distance, lex, parse
 from techsearch.retrieval import fuse
 
 
@@ -20,6 +20,31 @@ def test_code_aware_analysis_and_offsets():
     assert tokens[0].aliases == ("all", "promise")
     assert tokens[1].aliases == ("query", "selector")
     assert text[tokens[-1].start:tokens[-1].end] == "<a>"
+
+
+def test_prefix_budget_applies_to_terms_in_the_requested_field():
+    title, body = (FIELD_ID[field] for field in ("title", "body"))
+    matches = {
+        "abort": {0: {body: []}},
+        "abortcontroller": {0: {title: []}},
+        "abortsignal": {1: {title: []}},
+    }
+
+    class Vocabulary:
+        def prefix(self, prefix, limit):
+            return [term for term in matches if term.startswith(prefix)][:limit]
+
+        def posting(self, term):
+            return 1, 1, matches[term]
+
+    matcher = Matcher(Vocabulary(), {}, {0}, {"expansion": 1, "vocabulary_scan": 3})
+    assert matcher.prefix("Abort", "title") == [("abortcontroller", 1.0)]
+    assert matcher.prefix("Abort", "body") == [("abort", 1.0)]
+    with pytest.raises(QueryError, match="matches more than 1"):
+        matcher.prefix("Abort")
+    matcher = Matcher(Vocabulary(), {}, {0, 1}, {"expansion": 1, "vocabulary_scan": 3})
+    with pytest.raises(QueryError, match="matches more than 1"):
+        matcher.prefix("Abort", "title")
 
 
 @pytest.mark.parametrize("codec", CODECS)

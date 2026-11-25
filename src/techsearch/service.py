@@ -264,7 +264,10 @@ class SearchService:
             if diversify:
                 rows = mmr(rows, index)
                 trace["reranking"].append({"method": "mmr", "coefficient": MMR_COEFFICIENT, "window": MMR_WINDOW})
-            trace["expansions"] = [{"kind": kind, "from": term, "terms": values} for (kind, term), values in matcher.expansions.items()]
+            trace["expansions"] = [
+                {"kind": kind, "from": term, "terms": values, **({"field": field} if field else {})}
+                for (kind, term, field), values in matcher.expansions.items()
+            ]
             dense_passages = {document_id: details[0][1] for document_id, _, details in dense_hits if details}
             read_passage = stack.enter_context(self.dense.passages.reader()) if dense_passages else None
             snippets = []

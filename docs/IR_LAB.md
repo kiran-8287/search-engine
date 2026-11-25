@@ -1,65 +1,178 @@
 # IR Lab guide
 
-Open [IR Lab](http://localhost:8000/lab) on the local TechSearch server. Pick a section from the left navigation or the **Lab section** selector on a small screen. Back and Forward restore the section, report release, split, and evaluation view. The tab also remembers the comparison query and compatible settings, including when you visit Search and return.
+Open [IR Lab](http://localhost:8000/lab) on the local TechSearch server.
+Use [Search](http://localhost:8000/) for normal lookups.
 
-## Where the old tabs went
+## Model comparison
 
-| Previous tab | New location |
+The Lab opens here. The table compares five retrieval methods on the same
+queries and indexes.
+
+| Method | What it compares |
 | --- | --- |
-| Index | **Overview** · active index counts, component availability and release file sizes |
-| TAAT / DAAT | **Speed & execution** · term-at-a-time and document-at-a-time |
-| Dev benchmark | **Speed & execution** · Development |
-| Test benchmark | **Speed & execution** · Test |
-| Compression | **Compression** · posting sizes and any saved lookup/decode measurements |
-| Graph | **Link analysis** · graph and PageRank statistics, plus saved authority comparisons |
-| Rankers / feedback | **Compare searches** · expand **Saved ranker & feedback experiments** |
-| LSI / K-means | **Topics & clusters** · academic sample and cluster diagnostics |
-| Dev metrics | **Evaluation** → **Relevance** · Development |
-| Test metrics | **Evaluation** → **Relevance** · Test |
-| Dev ablations | **Evaluation** → **Feature comparisons** · Development execution |
-| Test ablations | **Evaluation** → **Feature comparisons** · Test execution |
-| Dev ablation metrics | **Evaluation** → **Feature comparisons** · Development relevance |
-| Test ablation metrics | **Evaluation** → **Feature comparisons** · Test relevance |
+| TF-IDF | Lexical cosine scores that weight distinctive terms. |
+| BM25 | Lexical scores that account for term frequency and document length. |
+| Query likelihood | A lexical language model with Dirichlet smoothing. |
+| Semantic | Exact similarity search over dense passage vectors. |
+| Hybrid | Reciprocal rank fusion of BM25 and Semantic rankings. |
 
-**Compare searches** runs both methods live on the active release. It keeps eight modes, lexical rankers, TAAT/DAAT, filters, parameters, source previews, explanations, traces, and export links. Expand **Authority & diversification** inside a method to enable those rerankers. The saved experiments below the live results include the Rocchio query-expansion probe. Session feedback remains available on Search. Live timings describe one run, and scores from different rankers use different scales.
+Auto routes a query to a search mode. TAAT and DAAT execute lexical scoring.
+Neither is an extra model in the table. Boolean, phrase, prefix, fuzzy and
+field constraints continue to work through the search service.
 
-## Reading reports
+- **nDCG@10** measures ordering in the first ten results. It uses gains
+  of `2^grade − 1` and log position discounts. The ideal ranking uses
+  the judged pool for that query.
+- **Precision@10** is the number of relevant hits divided by ten.
+- **MRR@10** is the reciprocal of the first relevant rank within ten,
+  or zero if none of the returned top-ten results is relevant.
+- **Median** describes a typical measured search time. The **95th
+  percentile** describes the slower end of the sample.
 
-Overview always describes the active index. Other sections let you choose an archive under **Saved report release** when one exists. Archive panels carry a prominent **Historical release** label and the full release ID. An unavailable archive report leaves that panel empty of measurements. Release-specific exports identify the selected release in their JSON and filename. Saved reports display the configuration fingerprint and provide their recorded configuration.
+Grades range from 0 to 3. Grades 2 and 3 count as relevant for Precision and
+MRR. The Lab leaves quality cells blank with a dash until the matching pooled
+evaluation is complete. It then labels the judgment source. An observed lead
+belongs to this query set and does not establish a general winner.
 
-- **Build statistics** come from the active release manifest. Compression shows postings payload, dictionary bytes, and their sum. The size of the complete release is separate and excludes the model, source exports, manifest, and reports.
-- **Saved reports** belong to their recorded release and settings. A successful saved TAAT/DAAT report verifies equal IDs, order and scores for its workload. That workload is independent of the Development/Test selector.
-- **Not generated** means no matching saved report exists for that release. The panel lists the applicable CLI command for the active release. Lab only reads these reports.
-- **Blocked or incomplete** means relevance metrics are unavailable. Any pending count refers to judgments still needed for that release, split, and run. Execution results such as latency can still exist.
+The server selects a compatible final Test report if one exists, otherwise
+it uses Development. It checks the active index ID, frozen query catalog,
+benchmark settings, report schema and method definitions. The evaluation
+report must match the exact benchmark run. The dashboard rechecks the
+current data when you switch tabs or return to the page, and every 30
+seconds while the page is visible. Exports keep the technical identifiers.
 
-Use **Evaluation → Protocol & status** for the frozen query catalog counts and the status of each selected split. Use Development to choose settings. Finalize them before using Test. The existing benchmark and evaluation commands still require `--confirm-sealed` for Test. The Lab can read saved Test reports, and opening the selector does not run those commands.
+## Try a query
 
-## Current release
+Enter one query and choose two methods. The Lab shows the first five
+results and the search time for each method. Use **Preview** to inspect
+source evidence and attribution. **Advanced options** exposes filters
+and settings where they apply. Scores and execution details are collapsed.
+Individual query times vary, and raw scores use different scales. A single
+comparison helps explain behavior, while quality measurements require a
+judged query set.
 
-The active release `250a15ecd349951d6c69364c` supplies the index summary, compression sizes, and MDN link graph. Its saved decode timings, TAAT/DAAT report, benchmarks, authority and feedback experiments, latent sample, and evaluation and feature comparison reports have yet to be generated.
+## Course experiments
 
-Select historical release `6f86fc58d97fad8a0c0ec387` to see its saved Development benchmark and feature comparison execution. Its Development feature comparison relevance report is blocked. Both `6f86fc58d97fad8a0c0ec387` and `a585b9035a3c6cd217a93cbb` have saved traversal, compression, retrieval, and latent experiment results. This workspace has no saved Test measurements.
+- **TAAT versus DAAT** compares the same BM25 queries through fresh readers
+  over the warmed filesystem. The median and 95th percentile pool the actual
+  timed samples. The experiment also checks equal result IDs, order and
+  scores. Python memory tracing is recorded separately.
+- **Compression** shows postings payload and complete representation sizes
+  in MiB. Complete size includes dictionary metadata. The decode workload
+  looks up the same analyzed terms for each codec.
+- **Link authority** compares BM25 to the same BM25 run with MDN PageRank
+  reranking. The timed comparison uses their common successful queries.
+  Graph size and convergence are available in a disclosure.
+- **Feedback** shows a Rocchio expansion using the top BM25 hit as a
+  controlled input. That hit is omitted from the displayed before and
+  after ranks. This demonstrates rank changes without claiming independent
+  improvement.
+- **LSI and K-means** explores a sample of documents with truncated SVD and
+  K-means. The table shows cluster sizes and terms with the largest weights
+  in projected cluster centers. Silhouette is computed on up to 1,000 of the
+  sampled documents and measures separation within that sample.
+
+## Generate Lab measurements
+
+Run these commands in the project environment. The benchmark requires an
+existing compatible release and the frozen catalog.
+
+```sh
+python -m techsearch benchmark --split dev --lab
+python -m techsearch evaluate --split dev --lab
+python -m techsearch experiments --suite all
+```
+
+The Lab benchmark warms each method once, discards those warm-ups, then
+records one complete local search per method and query. The method order
+is seeded and shuffled for each query. Semantic and Hybrid times include
+query encoding. The interval also includes parsing, retrieval, ranking and
+snippet construction. HTTP transfer, saved pagination and cold starts are
+outside the timing. All five methods use only their common successful queries
+for the displayed percentiles. The export records unavailable and degraded
+cases so the timing denominator remains visible.
+
+Evaluation pools the candidates from all compared methods and reuses
+matching judgments. With the default settings it needs judgments through
+rank 20, which covers the displayed rank-10 metrics and the pooled recall
+cutoff. Run without `--annotate` to check coverage without calling a
+provider. Only use provider annotation if authorized and configured.
+After settings are final, `benchmark --split test --lab --confirm-sealed`
+and `evaluate --split test --lab --confirm-sealed` use the held-out split.
+
+## Current measurements
+
+The 24 November 2026 Development run used release
+`250a15ecd349951d6c69364c` (15,345 documents) and the unchanged frozen
+catalog. All five methods completed 299 of the 300 queries. The remaining
+query, `title:Abort* timeout`, matched more than the configured 20-term
+prefix limit for every method. The saved run records that rejection.
+
+Field-scoped prefix searches now apply the expansion limit to terms
+present in the requested field and source scope. The same query expands
+to four title terms and returns results from all five methods. The original
+benchmark remains a record of the earlier behavior. A new Development
+run is needed to compare timings under the corrected behavior.
+
+| Method | Median (ms) | 95th percentile (ms) |
+| --- | ---: | ---: |
+| TF-IDF | 193.87 | 2300.48 |
+| BM25 | 203.78 | 2311.49 |
+| Query likelihood | 228.07 | 2289.93 |
+| Semantic | 403.36 | 2003.49 |
+| Hybrid | 447.19 | 2656.32 |
+
+TF-IDF had the lowest median time, and Semantic had the lowest 95th
+percentile. These results describe the Development workload on Windows
+with one timed pass per method per query after warm-up, a candidate
+depth of 150, and up to 100 returned results. The benchmark used
+`OMP_NUM_THREADS=2` and `OPENBLAS_NUM_THREADS=1`.
+Local server and browser checks overlapped part of the run, so small
+timing differences should be treated as observations from this machine.
+
+- On the six-query BM25 traversal workload, TAAT and DAAT agreed on IDs,
+  order and scores. The fresh-reader medians were 155.21 ms and 161.70 ms
+  over 18 timings per strategy. Their 95th percentiles were 521.73 ms and
+  528.69 ms. The median postings visited was 1,821.5 for both.
+- Fixed-width took 203.58 MiB, variable-byte 62.30 MiB and gamma 53.83
+  MiB including their dictionaries. Gamma saved 73.6% against
+  fixed-width. Its median lookup and decode time was 3,851.39 ms
+  compared with 224.59 ms for fixed-width on the sampled terms.
+- For BM25 + PageRank, the median was 7.61 ms lower and the 95th
+  percentile was 236.78 ms higher than BM25 on the paired Development
+  queries. The graph contains 12,597 MDN pages and 106,261 edges and
+  converged after 76 iterations.
+- The Rocchio demonstration ran on six queries. The LSI sample used
+  2,500 documents, 48 dimensions and 12 clusters. Its sampled
+  silhouette was 0.103.
+
+**Relevance evaluation is pending.** The matching pool has 12,056
+unjudged query/document pairs and zero cached judgments. Both the
+annotation key and model are unset. No provider calls were made and
+the held-out Test set was left sealed. The speed measurements and rank
+changes cannot establish which method is more relevant.
+
+The summary and course reports are under
+`artifacts/reports/250a15ecd349951d6c69364c/`. The full run and ranked
+CSV export are under `artifacts/runs/250a15ecd349951d6c69364c/`.
 
 ## Screenshots
 
-These captures use the real saved releases. The historical examples were opened through the archive selector.
+- [Model comparison](../artifacts/execution/lab-three-tabs/lab-model-comparison.png)
+- [Try a query](../artifacts/execution/lab-three-tabs/lab-try-query.png)
+- [Course experiments](../artifacts/execution/lab-three-tabs/lab-course-experiments.png)
 
-| Section or state | Screenshot |
-| --- | --- |
-| Overview | [Active index and report status](../artifacts/execution/lab-navigation/lab-overview.png) |
-| Compare searches | [Method settings](../artifacts/execution/lab-navigation/lab-comparison.png) · [Live results and exports](../artifacts/execution/lab-navigation/lab-comparison-results.png) |
-| Speed & execution | [Active availability](../artifacts/execution/lab-navigation/lab-speed.png) · [Historical benchmark](../artifacts/execution/lab-navigation/lab-historical-speed.png) |
-| Compression | [Postings sizes and timing availability](../artifacts/execution/lab-navigation/lab-compression.png) |
-| Link analysis | [MDN graph and PageRank](../artifacts/execution/lab-navigation/lab-links.png) |
-| Topics & clusters | [Active sample availability](../artifacts/execution/lab-navigation/lab-topics.png) |
-| Evaluation | [Active relevance status](../artifacts/execution/lab-navigation/lab-evaluation.png) · [Historical execution and blocked relevance](../artifacts/execution/lab-navigation/lab-historical-evaluation.png) |
-| Small screens | [Mobile section selector](../artifacts/execution/lab-navigation/lab-mobile.png) |
+The [browser verification record](../artifacts/execution/lab-three-tabs/app-verification.json)
+includes the live Semantic/Hybrid comparison, Search checks, and report
+export checks.
 
-The [real-app verification record](../artifacts/execution/lab-navigation/app-verification.json) lists exercised search modes, API checks, report status, and browser errors.
+## API and exports
 
-## API
-
-`GET /api/v1/report-inventory` lists the active ID, report availability by release and the evaluation protocol summary. The existing reports, benchmarks and report exports keep their active-release behavior when called without a release parameter. Pass `?release=<id>` to view a specific release. The API checks saved report names, release IDs and split metadata before serving a report.
+`GET /api/v1/lab` resolves current measurements. The existing reports,
+benchmarks, and ranking exports are still available. Use the explicit
+`release` parameter on supported report endpoints for archived research.
+Archived measurements stay outside the Lab dashboard. The Lab exports
+the matching `lab-dev` or `lab-test` report via its Measurement details.
 
 ## Try a search
 
@@ -134,3 +247,20 @@ python -m techsearch evaluate --split dev --annotate --limit 50
 ```
 
 `--limit` caps newly judged candidate pairs per invocation. Audit or adjudication can make extra requests per pair. The command caches judgments under `data/evaluation/annotations/` so a rerun can resume the pool. Use the same `--ablations` flag as the benchmark when applicable. For held-out evaluation after finalizing settings, use `python -m techsearch evaluate --split test --confirm-sealed`. A blocked or partial run can return exit code 2 and still write status. Metrics such as nDCG and MRR become available when the pool is judged. Read pending reports as unavailable. A numeric zero is a measured value. Search feedback stays in `data/runtime/` and does not become a benchmark judgment.
+
+## Earlier verification captures
+
+These earlier captures document the former Lab layout on saved releases. The historical examples were opened through the archive selector.
+
+| Section or state | Screenshot |
+| --- | --- |
+| Overview | [Active index and report status](../artifacts/execution/lab-navigation/lab-overview.png) |
+| Compare searches | [Method settings](../artifacts/execution/lab-navigation/lab-comparison.png) · [Live results and exports](../artifacts/execution/lab-navigation/lab-comparison-results.png) |
+| Speed & execution | [Active availability](../artifacts/execution/lab-navigation/lab-speed.png) · [Historical benchmark](../artifacts/execution/lab-navigation/lab-historical-speed.png) |
+| Compression | [Postings sizes and timing availability](../artifacts/execution/lab-navigation/lab-compression.png) |
+| Link analysis | [MDN graph and PageRank](../artifacts/execution/lab-navigation/lab-links.png) |
+| Topics & clusters | [Active sample availability](../artifacts/execution/lab-navigation/lab-topics.png) |
+| Evaluation | [Active relevance status](../artifacts/execution/lab-navigation/lab-evaluation.png) · [Historical execution and blocked relevance](../artifacts/execution/lab-navigation/lab-historical-evaluation.png) |
+| Small screens | [Mobile section selector](../artifacts/execution/lab-navigation/lab-mobile.png) |
+
+The [real-app verification record](../artifacts/execution/lab-navigation/app-verification.json) lists exercised search modes, API checks, report status, and browser errors.

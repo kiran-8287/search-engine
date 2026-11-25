@@ -245,19 +245,32 @@ class Matcher:
         self.settings = settings
         self.expansions = {}
 
-    def prefix(self, value):
+    def prefix(self, value, field=None):
         term = next(analyze(value)).term
-        if ("prefix", term) not in self.expansions:
+        key = ("prefix", term, field)
+        if key not in self.expansions:
             limit = self.settings["expansion"]
-            found = self.index.prefix(term, limit + 1)
+            if field is None:
+                found = self.index.prefix(term, limit + 1)
+            else:
+                scan_limit = self.settings["vocabulary_scan"]
+                candidates = self.index.prefix(term, scan_limit + 1)
+                if len(candidates) > scan_limit:
+                    raise QueryError(f"Prefix {value!r} exceeds the vocabulary scan limit. Use a longer prefix.")
+                found = []
+                for candidate in candidates:
+                    if self.docs(candidate, FIELD_ID[field]):
+                        found.append(candidate)
+                        if len(found) > limit:
+                            break
             if len(found) > limit:
                 raise QueryError(f"Prefix {value!r} matches more than {limit} terms. Use a longer prefix.")
-            self.expansions["prefix", term] = [(candidate, 1.0) for candidate in found]
-        return self.expansions["prefix", term]
+            self.expansions[key] = [(candidate, 1.0) for candidate in found]
+        return self.expansions[key]
 
     def fuzzy(self, term):
-        if ("fuzzy", term) in self.expansions:
-            return self.expansions["fuzzy", term]
+        if ("fuzzy", term, None) in self.expansions:
+            return self.expansions["fuzzy", term, None]
         if len(term) < 5 or len(term) > 35 or not term.replace(".", "").isalpha() or self.index.df(term):
             return [(term, 1.0)]
         bound = 1 if len(term) <= 7 else 2
@@ -271,7 +284,7 @@ class Matcher:
                 candidates.append((distance, -df, candidate))
         chosen = sorted(candidates)[:self.settings["expansion"]]
         result = [(term, 1.0)] + [(candidate, 1 / (distance + 2)) for distance, _, candidate in chosen]
-        self.expansions["fuzzy", term] = result
+        self.expansions["fuzzy", term, None] = result
         return result
 
     def match(self, node):
@@ -289,7 +302,7 @@ class Matcher:
         field = FIELD_ID.get(node.field)
         if node.kind == "prefix":
             documents = set()
-            for term, _weight in self.prefix(node.value):
+            for term, _weight in self.prefix(node.value, node.field):
                 documents.update(self.docs(term, field))
             return documents
         terms = [token.term for token in analyze(node.value)]
@@ -336,7 +349,7 @@ class Matcher:
         for atom in atoms:
             field = FIELD_ID.get(atom.field)
             if atom.kind == "prefix":
-                candidates = self.prefix(atom.value)
+                candidates = self.prefix(atom.value, atom.field)
             else:
                 candidates = []
                 expand_spelling = fuzzy and not atom.field and atom.kind == "word"

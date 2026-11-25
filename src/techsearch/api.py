@@ -12,8 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .config import load_settings
 from .dense import DenseUnavailable
+from .evaluation import lab_settings, matches_lab_run
 from .feedback import SnapshotMissing, search_id
-from .io import WorkloadError, read_json
+from .io import WorkloadError, digest, read_json
 from .pipeline import RELEASE_ID, ReleaseUnavailable, open_release, status
 from .query import QueryError
 from .repository import Documents
@@ -25,7 +26,8 @@ Ranker = Literal["bm25", "tfidf", "likelihood"]
 SESSION = re.compile("[a-f0-9]{32}")
 REPORTS = {"compression", "taat-daat", "graph", "latent", "retrieval", "benchmark-dev", "benchmark-test",
            "evaluation-dev", "evaluation-test", "ablations-dev", "ablations-test",
-           "evaluation-ablations-dev", "evaluation-ablations-test"}
+           "evaluation-ablations-dev", "evaluation-ablations-test",
+           "lab-dev", "lab-test", "evaluation-lab-dev", "evaluation-lab-test"}
 
 
 class SearchRequest(BaseModel):
@@ -266,6 +268,49 @@ def create_app(settings=None):
     @app.get("/api/v1/reports/{name}")
     def report(name: str, release: str | None = Query(None, pattern=r"^[a-f0-9]{24}$")):
         return load_report(name, release)
+
+    @app.get("/api/v1/lab")
+    def lab_measurements(response: Response):
+        """Resolve the Lab data against the same release used by Search."""
+        active = service().release
+        response.headers["Cache-Control"] = "no-store"
+        result = {"release_id": active.id, "documents": active.info["lexical"]["parents"],
+                  "configuration": settings.fingerprint, "measurement": None, "quality": None,
+                  "experiment_settings": lab_settings(settings),
+                  "search_settings": {key: settings.search[key] for key in ("max_results", "k1", "b", "rrf_k")}}
+        try:
+            frozen = read_json(settings.path("data") / "evaluation" / "frozen.json")
+            protocol = frozen["group_fingerprint"]
+            groups = frozen["groups"]
+            if protocol != digest(groups) or not all(isinstance(group, dict) for group in groups):
+                return result
+        except (OSError, ValueError, KeyError, TypeError):
+            return result
+        for split in ("test", "dev"):
+            try:
+                saved = saved_report(f"lab-{split}", active.id)
+            except HTTPException:
+                continue
+            if not saved:
+                continue
+            run = saved["report"]
+            query_count = sum(group.get("split") == split for group in groups)
+            paired = run.get("paired_queries")
+            if (not matches_lab_run(settings, run, active.id, split, protocol)
+                    or run.get("query_count") != query_count or not run.get("run_id")
+                    or type(paired) is not int or not 0 < paired <= query_count):
+                continue
+            result["measurement"] = run
+            try:
+                graded = saved_report(f"evaluation-lab-{split}", active.id)
+            except HTTPException:
+                graded = None
+            if graded:
+                quality = graded["report"]
+                if quality.get("measurement_run_id") == run["run_id"] and quality.get("protocol") == protocol:
+                    result["quality"] = quality
+            break
+        return result
 
     @app.get("/api/v1/benchmarks/{split}")
     def benchmarks(split: Literal["dev", "test"], release: str | None = Query(None, pattern=r"^[a-f0-9]{24}$")):

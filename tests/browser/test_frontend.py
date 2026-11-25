@@ -4,7 +4,6 @@ from __future__ import annotations
 import socket
 import threading
 import time
-from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -243,112 +242,101 @@ def test_search_loading_empty_and_error_states(page, base):
     expect(page.locator("#results > li")).to_have_count(0)
 
 
-def test_lab_controls_comparison_and_reports(page, base):
+def test_lab_method_mapping_controls_preview_and_navigation(page, base):
+    sent = []
+
+    def record_comparison(route):
+        sent.append(route.request.post_data_json)
+        route.continue_()
+
+    page.route("**/api/v1/compare", record_comparison)
     page.goto(base + "/lab")
-    expect(page.get_by_role("heading", name="Information retrieval lab")).to_be_visible()
-    expect(page.get_by_role("table", name="Index summary")).to_be_visible()
-    navigation = page.get_by_role("navigation", name="Lab sections")
-    navigation.get_by_role("link", name="Compare searches").click()
-    expect(page.get_by_label("Mode", exact=True).first.locator("option")).to_have_count(8)
-    page.get_by_label("Comparison query").fill("Promise.all")
-    page.get_by_role("button", name="Compare", exact=True).click()
-    expect(page.locator("#status")).to_have_text("Comparison ready.")
-    expect(page.get_by_text("This release has no dense passages", exact=False)).to_be_visible()
-    expect(page.get_by_text("Execution trace", exact=True)).to_be_visible()
-    assert page.request.get(base + page.get_by_role("link", name="Export ranking").get_attribute("href")).ok
-    navigation.get_by_role("link", name="Compression", exact=True).click()
-    expect(page.get_by_role("table", name="Compression sizes")).to_be_visible()
-    expect(page.locator("#report progress")).to_have_count(3)
-    expect(page.get_by_role("link", name="Export JSON", exact=True)).to_be_visible()
-    navigation.get_by_role("link", name="Speed & execution").click()
-    expect(page.get_by_text("The TAAT/DAAT timing and equivalence check has not been generated", exact=False)).to_be_visible()
-    page.set_viewport_size({"width": 320, "height": 740})
-    no_page_overflow(page)
-
-
-def test_lab_sections_history_and_release_attribution(page, base, settings, release):
-    archived = SimpleNamespace(id="a" * 24)
-    for split, repeats in (("dev", 3), ("test", 8)):
-        save_report(settings, archived, "benchmark-" + split, {
-            "split": split, "repeats": repeats, "release_id": archived.id,
-            "outcomes": {"bm25": {"ok": 2}}, "latency_note": "Fixture reader conditions",
-        })
-    save_report(settings, archived, "evaluation-ablations-dev", {
-        "split": "dev", "status": "blocked", "reason": "Missing annotation configuration", "pending": 5,
-    })
-    errors = []
-    page.on("pageerror", lambda error: errors.append(str(error)))
-    page.goto(base + "/lab")
-    nav = page.get_by_role("navigation", name="Lab sections")
-    expect(nav.get_by_role("link")).to_have_count(7)
-    expect(page.get_by_label("Lab section", exact=True)).not_to_be_visible()
-    expect(page.get_by_role("table", name="Index summary")).to_contain_text(release.id)
-
-    compare = nav.get_by_role("link", name="Compare searches")
-    compare.focus()
-    compare.press("Enter")
-    expect(page.locator("#section-title")).to_be_focused()
-    page.get_by_label("Comparison query").fill("Promise.all")
-    page.locator("#method-a-ranker").select_option("tfidf")
-    page.locator("#method-a-source").select_option("mdn")
-    topic = page.locator("#method-a-topic")
-    expect(topic.locator('option[value="javascript"]')).to_have_count(1)
-    topic.select_option("javascript")
-    page.get_by_text("Authority & diversification", exact=True).first.click()
-    page.get_by_label("MDN authority").first.check()
-    links = nav.get_by_role("link", name="Link analysis")
-    links.click()
-    expect(page.get_by_role("table", name="Graph summary")).to_be_visible()
-    nav.get_by_role("link", name="Topics & clusters").click()
-    expect(page.get_by_text("sampled LSI and K-means report has not been generated", exact=False)).to_be_visible()
-    nav.get_by_role("link", name="Speed & execution").click()
-    expect(page.locator("#report")).to_contain_text("Active release " + release.id)
-    expect(page.locator("#report")).to_contain_text("has not been generated for the active release")
-    expect(page.get_by_role("table", name="Benchmark settings")).to_have_count(0)
-
-    page.get_by_label("Saved report release").select_option(archived.id)
-    expect(page.locator(".report-release.historical")).to_have_text("Historical release " + archived.id)
-    settings_table = page.get_by_role("table", name="Benchmark settings")
-    expect(settings_table.get_by_role("row", name="Repeats 3")).to_be_visible()
-    page.get_by_label("Query split").select_option("test")
-    expect(settings_table.get_by_role("row", name="Repeats 8")).to_be_visible()
-    expect(page.get_by_role("link", name="Export JSON")).to_have_attribute(
-        "href", "/api/v1/exports/reports/benchmark-test?release=" + archived.id,
-    )
+    nav = page.get_by_role("navigation", name="IR Lab tabs")
+    expect(nav.get_by_role("link")).to_have_count(3)
+    expect(page.get_by_role("heading", name="Model comparison")).to_be_visible()
+    nav.get_by_role("link", name="Try a query").click()
+    query = page.get_by_label("Comparison query")
+    query.fill("Promise.all")
+    a, b = [page.get_by_role("group", name=f"Method {side}") for side in ("A", "B")]
+    select_a = a.get_by_label("Retrieval method A")
+    select_b = b.get_by_label("Retrieval method B")
+    expect(select_a.locator("option")).to_have_text(["TF-IDF", "BM25", "Query likelihood", "Semantic", "Hybrid"])
+    a.get_by_text("Advanced options", exact=True).click()
+    a.get_by_label("Execution").select_option("daat")
+    a.get_by_label("BM25 k₁").fill("1.4")
+    select_b.select_option("bm25")
+    for key, mode, ranker in (
+        ("tfidf", "keyword", "tfidf"), ("bm25", "keyword", "bm25"), ("likelihood", "keyword", "likelihood"),
+        ("dense", "semantic", None), ("hybrid", "hybrid", "bm25"),
+    ):
+        select_a.select_option(key)
+        query.press("Enter")
+        expect(page.locator("#status")).to_have_text("Comparison ready.")
+        left = sent[-1]["left"]
+        assert left["query"] == "Promise.all" and left["page_size"] == 5
+        assert left["mode"] == mode and left.get("ranker") == ranker
+        assert (left.get("strategy") == "daat") == (key in {"tfidf", "bm25", "hybrid"})
+        assert ("k1" in left) == (key in {"bm25", "hybrid"})
+    right = page.locator(".rank-panel").nth(1)
+    assert 1 <= right.locator(".results > li").count() <= 5
+    expect(right.get_by_text("Execution details")).to_be_visible()
+    expect(right.locator("details.diagnostic[open]")).to_have_count(0)
+    right.get_by_role("button", name="Preview", exact=True).first.click()
+    expect(page.get_by_role("dialog")).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(page.get_by_role("dialog")).not_to_be_visible()
+    nav.get_by_role("link", name="Course experiments").click()
+    expect(page.get_by_role("heading", name="Course experiments")).to_be_visible()
     page.go_back()
-    expect(page.get_by_label("Query split")).to_have_value("dev")
-    expect(settings_table.get_by_role("row", name="Repeats 3")).to_be_visible()
-    page.go_forward()
-    expect(page.get_by_label("Query split")).to_have_value("test")
-    expect(settings_table.get_by_role("row", name="Repeats 8")).to_be_visible()
-
-    nav.get_by_role("link", name="Evaluation").click()
-    expect(page.get_by_label("Query split")).to_have_value("test")
-    expect(page.locator("#report")).to_contain_text("The judged relevance report has not been generated")
-    page.get_by_label("Query split").select_option("dev")
-    page.get_by_label("Evaluation view").select_option("features")
-    expect(page.locator("#report")).to_contain_text("Missing annotation configuration")
-    expect(page.locator("#report")).to_contain_text("5 pending judgments")
-    expect(page.get_by_role("table", name="Relevance metrics")).to_have_count(0)
-    page.get_by_label("Evaluation view").select_option("protocol")
-    expect(page.get_by_role("table", name="Evaluation report status")).to_contain_text("Blocked")
-    expect(page.locator("#report")).to_contain_text("Keep Test held out until settings are final.")
-
-    nav.get_by_role("link", name="Overview").click()
-    expect(page.get_by_role("table", name="Index summary")).to_contain_text(release.id)
-    compare.click()
-    expect(page.get_by_label("Comparison query")).to_have_value("Promise.all")
+    expect(query).to_have_value("Promise.all")
+    expect(select_a).to_have_value("hybrid")
     page.get_by_role("link", name="Search", exact=True).click()
     page.get_by_role("link", name="IR Lab").click()
-    expect(page.locator("#section-title")).to_have_text("Compare searches")
-    expect(page.get_by_label("Comparison query")).to_have_value("Promise.all")
-    expect(page.locator("#method-a-ranker")).to_have_value("tfidf")
-    expect(page.locator("#method-a-source")).to_have_value("mdn")
-    expect(page.locator("#method-a-topic")).to_have_value("javascript")
-    expect(page.get_by_label("MDN authority").first).to_be_checked()
-    page.set_viewport_size({"width": 320, "height": 740})
-    expect(nav).not_to_be_visible()
-    page.get_by_role("combobox", name="Lab section", exact=True).select_option("compression")
-    expect(page.locator("#section-title")).to_have_text("Compression")
-    no_page_overflow(page)
-    assert not errors
+    nav.get_by_role("link", name="Try a query").click()
+    expect(query).to_have_value("Promise.all")
+    expect(select_a).to_have_value("hybrid")
+
+
+def test_lab_metric_formatting_and_stale_data_on_mobile(page, base, settings, release):
+    from techsearch.evaluation import LAB_METHODS
+
+    run = {"split": "dev", "run_id": "dev-fixture", "created_at": "2026-11-24T00:00:00Z",
+           "query_count": 10, "paired_queries": 8, "repeats": 3, "candidate_depth": 150,
+           "timing_ms": {key: {"warm": {"p50": index + 0.126, "p95": index + 2.126}}
+                         for index, key in enumerate(LAB_METHODS)},
+           "outcomes": {key: {"ok": 8, "unavailable": 2} for key in LAB_METHODS}}
+    response = {"release_id": release.id, "configuration": settings.fingerprint,
+                "documents": 10, "measurement": run, "quality": {"pending": 18}}
+    page.route("**/api/v1/lab", lambda route: route.fulfill(json=response))
+    save_report(settings, release, "compression", {"codecs": {
+        "uint32": {"payload_bytes": 1048576, "artifact_bytes": 2 * 1048576, "median_lookup_decode_ms": 0.12},
+        "vb": {"payload_bytes": 524288, "artifact_bytes": 1048576, "median_lookup_decode_ms": 0.30},
+    }})
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(base + "/lab")
+    method = page.get_by_role("row", name="TF-IDF", exact=False)
+    expect(method.get_by_role("cell")).to_have_text(["—", "—", "—", "0.13", "2.13"])
+    expect(page.get_by_text("Quality evaluation is pending", exact=False)).to_be_visible()
+    expect(page.get_by_text("Highest measured nDCG@10", exact=False)).to_have_count(0)
+    expect(page.get_by_text("Ranking quality by method", exact=False)).to_have_count(0)
+    expect(page.get_by_text("Lowest measured median time", exact=False)).to_contain_text("TF-IDF")
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    nav = page.get_by_role("navigation", name="IR Lab tabs")
+    nav.get_by_role("link", name="Course experiments").click()
+    row = page.get_by_role("row", name="Variable-byte", exact=False)
+    expect(row.get_by_role("cell")).to_have_text(["0.50", "1.00", "50.0%", "0.30"])
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.go_back()
+    expect(method.get_by_role("cell").nth(3)).to_have_text("0.13")
+
+    response["quality"] = {"label_type": "AI-judged", "sample_counts": dict.fromkeys(LAB_METHODS, 8),
+                           "aggregates": {key: {"nDCG@10": .6 + i * .04, "P@10": .4, "MRR@10": .5}
+                                          for i, key in enumerate(LAB_METHODS)}}
+    page.evaluate("window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))")
+    expect(page.get_by_text("Highest measured nDCG@10", exact=False)).to_contain_text("Hybrid")
+    expect(page.get_by_text("Ranking quality by method", exact=False)).to_be_visible()
+    response.update(release_id="a"*24, measurement=None, quality=None)
+    page.evaluate("window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))")
+    expect(page.get_by_text("No compatible measurements", exact=False)).to_be_visible()
+    expect(method.get_by_role("cell")).to_have_text(["—", "—", "—", "—", "—"])
+    expect(page.get_by_text("Lowest measured median time", exact=False)).to_have_count(0)

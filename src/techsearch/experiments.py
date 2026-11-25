@@ -62,19 +62,20 @@ def execution_report(service, queries, repeats):
                 with ExitStack() as stack:
                     shared = Index(service.release.path, stack, files=service.index_files) if condition == "reused-index-reader" else None
                     for _ in range(repeats):
-                        tracemalloc.start()
-                        try:
-                            started = perf_counter()
-                            result = service.search(query, mode="keyword", strategy=strategy, index=shared)
-                            times.append((perf_counter() - started) * 1000)
-                            peaks.append(tracemalloc.get_traced_memory()[1])
-                        finally:
-                            tracemalloc.stop()
+                        started = perf_counter()
+                        result = service.search(query, mode="keyword", strategy=strategy, index=shared)
+                        times.append((perf_counter() - started) * 1000)
                         signatures.add(tuple((hit["id"], hit["score"]) for hit in result["results"]))
+                    tracemalloc.start()
+                    try:
+                        service.search(query, mode="keyword", strategy=strategy, index=shared)
+                        peaks.append(tracemalloc.get_traced_memory()[1])
+                    finally:
+                        tracemalloc.stop()
                     traces = result["trace"]["branches"].get("lexical", {})
                     rows.append({"query": query, "condition": condition, "strategy": strategy,
                                  "p50_ms": statistics.median(times), "p95_ms": percentile(times, .95),
-                                 "traced_python_peak_bytes": max(peaks), "work": traces})
+                                 "timings_ms": times, "traced_python_peak_bytes": max(peaks), "work": traces})
         if len(signatures) != 1:
             raise ValueError(f"TAAT and DAAT diverged for {query!r}")
     return rows
@@ -146,8 +147,12 @@ def latent_report(service, window, components, clusters, seed, queries):
     silhouette = None
     if 1 < effective_clusters < len(sample_ids):
         silhouette = float(silhouette_score(latent, labels, sample_size=min(1000, len(sample_ids)), random_state=seed))
+    terms = list(vocabulary)
+    projected_centers = model.cluster_centers_ @ svd.components_
+    representatives = {cluster: [terms[column] for column in np.argsort(-center, kind="stable")[:5]]
+                       for cluster, center in enumerate(projected_centers) if cluster in labels}
     diagnostics = {"clusters": count, "effective_clusters": effective_clusters, "inertia": float(model.inertia_),
-                   "sizes": dict(Counter(map(int, labels))), "silhouette": silhouette}
+                   "sizes": dict(Counter(map(int, labels))), "silhouette": silhouette, "representative_terms": representatives}
     anchor = latent[0]
     cosine = latent @ anchor
     nearest = sorted(range(1, len(sample_ids)), key=lambda row: (-float(cosine[row]), sample_ids[row]))[:10]
@@ -191,7 +196,7 @@ def retrieval_report(service, queries):
             result = service.search(query, mode="keyword", **options)
             methods[name] = {"options": {"mode": "keyword", **options}, "timing_ms": result["timing_ms"],
                              "trace": result["trace"],
-                             "hits": [{"id": hit["id"], "score": hit["score"]} for hit in result["results"]]}
+                             "hits": [{"id": hit["id"], "title": hit["title"], "score": hit["score"]} for hit in result["results"]]}
         started = perf_counter()
         with ExitStack() as stack:
             index = Index(service.release.path, stack, files=service.index_files)
@@ -210,7 +215,7 @@ def retrieval_report(service, queries):
                 "probe_document": probe[0]["id"] if probe else None,
                 "beta": .75, "gamma": .25, "expansion_limit": 6,
                 "expansion": terms, "timing_ms": (perf_counter() - started) * 1000,
-                "work": work, "hits": [{"id": service.parents[doc]["stable"], "score": score}
+                "work": work, "hits": [{"id": service.parents[doc]["stable"], "title": service.parents[doc]["title"], "score": score}
                                        for doc, score, _ in ranked]}
         rows.append({"query": query, "methods": methods})
     return {"queries": list(queries), "rows": rows,

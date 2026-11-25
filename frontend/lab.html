@@ -25,73 +25,40 @@
   <main id="main" class="frame lab" tabindex="-1">
     <header class="lab-heading">
       <h1>Information retrieval lab</h1>
-      <p>Compare searches and explore experiments on local releases.</p>
+      <p>Compare retrieval quality and speed. Explore how the search engine works.</p>
     </header>
-    <div class="lab-layout">
-      <nav id="lab-nav" class="lab-nav" aria-label="Lab sections">
-        <a href="/lab?section=overview" data-section="overview" aria-current="page">Overview</a>
-        <a href="/lab?section=compare" data-section="compare">Compare searches</a>
-        <a href="/lab?section=speed" data-section="speed">Speed &amp; execution</a>
-        <a href="/lab?section=compression" data-section="compression">Compression</a>
-        <a href="/lab?section=links" data-section="links">Link analysis</a>
-        <a href="/lab?section=topics" data-section="topics">Topics &amp; clusters</a>
-        <a href="/lab?section=evaluation" data-section="evaluation">Evaluation</a>
-      </nav>
-      <div class="lab-section-picker control">
-        <label for="lab-section">Lab section</label>
-        <select id="lab-section">
-          <option value="overview">Overview</option>
-          <option value="compare">Compare searches</option>
-          <option value="speed">Speed &amp; execution</option>
-          <option value="compression">Compression</option>
-          <option value="links">Link analysis</option>
-          <option value="topics">Topics &amp; clusters</option>
-          <option value="evaluation">Evaluation</option>
-        </select>
-      </div>
-      <section class="lab-content" aria-labelledby="section-title">
-        <h2 id="section-title" tabindex="-1">Overview</h2>
-        <div id="comparison-panel" hidden>
-          <p class="lab-intro">Run two searches on the active release. Their times are for this run. Scores from different rankers use different scales.</p>
-          <form id="compare" class="lab-form">
-            <label class="field-label" for="query">Comparison query</label>
-            <div class="search-form">
-              <div class="search-line">
-                <span class="magnifier" aria-hidden="true"></span>
-                <input id="query" type="search" placeholder="Enter a query to compare" maxlength="512">
-              </div>
-              <button class="button primary" type="submit">Compare</button>
-            </div>
-            <div id="configurations" class="comparison"></div>
-          </form>
-          <p class="status" id="status" role="status"></p>
-          <section id="rankings" class="comparison" aria-label="Ranking comparison"></section>
+    <nav id="lab-nav" class="lab-nav" aria-label="IR Lab tabs">
+      <a href="/lab" data-section="models" aria-current="page">Model comparison</a>
+      <a href="/lab?section=query" data-section="query">Try a query</a>
+      <a href="/lab?section=experiments" data-section="experiments">Course experiments</a>
+    </nav>
+    <section id="models-panel" class="lab-content report" aria-labelledby="models-title">
+      <h2 id="models-title" tabindex="-1">Model comparison</h2>
+      <p id="model-status" class="status" role="status">Loading measurements…</p>
+      <div id="models-report"></div>
+    </section>
+    <section id="query-panel" class="lab-content" aria-labelledby="query-title" hidden>
+      <h2 id="query-title" tabindex="-1">Try a query</h2>
+      <form id="compare" class="lab-form">
+        <label class="field-label" for="query">Comparison query</label>
+        <div class="search-form">
+          <div class="search-line">
+            <span class="magnifier" aria-hidden="true"></span>
+            <input id="query" type="search" placeholder="e.g. wait for several JavaScript promises to finish" maxlength="512" required>
+          </div>
+          <button class="button primary" type="submit">Compare</button>
         </div>
-        <div id="report-controls" class="report-controls" hidden>
-          <div id="release-control" class="control" hidden>
-            <label for="report-release">Saved report release</label>
-            <select id="report-release"><option value="">Active release</option></select>
-          </div>
-          <div id="split-control" class="control" hidden>
-            <label for="report-split">Query split</label>
-            <select id="report-split">
-              <option value="dev">Development</option>
-              <option value="test">Test</option>
-            </select>
-          </div>
-          <div id="evaluation-controls" class="control" hidden>
-            <label for="evaluation-view">Evaluation view</label>
-            <select id="evaluation-view">
-              <option value="relevance">Relevance</option>
-              <option value="features">Feature comparisons</option>
-              <option value="protocol">Protocol &amp; status</option>
-            </select>
-          </div>
-        </div>
-        <p id="report-status" class="status" role="status"></p>
-        <div id="report" class="report"></div>
-      </section>
-    </div>
+        <div id="configurations" class="comparison"></div>
+      </form>
+      <p class="lab-intro">Individual query times vary. Ranking scores from different methods are not directly comparable.</p>
+      <p class="status" id="status" role="status"></p>
+      <section id="rankings" class="comparison" aria-label="Ranking comparison"></section>
+    </section>
+    <section id="experiments-panel" class="lab-content report" aria-labelledby="experiments-title" hidden>
+      <h2 id="experiments-title" tabindex="-1">Course experiments</h2>
+      <p id="experiment-status" class="status" role="status"></p>
+      <div id="experiments-report"></div>
+    </section>
   </main>
   <footer class="page-footer"><div class="frame"><strong>TechSearch</strong><span>Local information retrieval lab</span></div></footer>
   <dialog id="preview" class="preview" aria-labelledby="preview-title">
