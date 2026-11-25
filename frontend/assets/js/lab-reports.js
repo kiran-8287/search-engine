@@ -185,6 +185,8 @@ function traversal(report) {
   return [
     el("p", "Both strategies run BM25 on the same " + count(report.queries.length) + " queries."),
     table("Traversal comparison", ["Strategy", "Median (ms)", "95th percentile (ms)", "Median postings visited"], rows),
+    el("p", count(report.repeats) + " timed repeats per query and strategy, with a fresh reader for each search. " +
+      "There was no separate warm-up. Searches shared the OS file cache. Memory tracing was outside the timings."),
     el("p", report.equivalent ? "Result IDs, order, and scores agreed on these queries. Timing can vary by workload."
       : "Result agreement is unavailable for this measurement."),
   ];
@@ -200,10 +202,20 @@ function compression(report) {
     return [label, mib(codec.payload_bytes), mib(codec.artifact_bytes),
       fixed(100 * (baseline - codec.artifact_bytes) / baseline, 1) + "%", fixed(codec.median_lookup_decode_ms)];
   });
-  return [
-    table("Index compression", ["Encoding", "Postings (MiB)", "Complete (MiB)", "Space saved", "Lookup and decode (ms)"], rows),
+  const content = [
+    table("Index compression", ["Encoding", "Postings (MiB)", "Complete (MiB)", "Space saved", "Median batch lookup and decode (ms)"], rows),
     el("p", "Complete size includes the dictionary. Savings use fixed-width as the baseline. The smallest encoding can take longer to decode."),
   ];
+  if (report.terms?.length && report.repeats) {
+    const warmup = report.warmups ? " Each codec had one untimed warm-up, and the timed codec order rotated." : "";
+    content.push(
+      el("p", "One batch looks up and decodes the same " + count(report.terms.length) + " distinct terms. " +
+        "Each value is the median of " + count(report.repeats) + " timed batches per codec. Reader setup is outside the timing." + warmup),
+      detail("Lookup workload", ...(report.queries ? [el("p", "Queries · " + report.queries.join(" · "))] : []),
+        el("p", "Terms · " + report.terms.join(", "))),
+    );
+  }
+  return content;
 }
 
 function authority(run, quality, graph) {
@@ -211,7 +223,11 @@ function authority(run, quality, graph) {
   const judged = validQuality(run, quality) && quality.authority_paired?.queries * run.repeats === timing?.bm25?.observations;
   const methods = [["bm25", "BM25"], ["pagerank", "BM25 + PageRank"]];
   const content = [
-    el("p", "PageRank reorders MDN results in the candidate window. Both runs use the same BM25 settings."),
+    el("p", timing?.bm25?.observations && run.repeats
+      ? "Both runs use the same BM25 settings on " + count(timing.bm25.observations / run.repeats) +
+        (run.split === "test" ? " final Test queries." : " Development queries.") +
+        " PageRank reorders MDN results in the candidate window."
+      : "PageRank reorders MDN results in the candidate window. Both runs use the same BM25 settings."),
     table("Link authority comparison", ["Method", "nDCG@10", "Median time (ms)", "95th percentile (ms)"], methods.map(([method, name]) => [
       name, fixed(judged ? quality.authority_paired[method] : null, 3), fixed(timing?.[method]?.p50), fixed(timing?.[method]?.p95),
     ])),

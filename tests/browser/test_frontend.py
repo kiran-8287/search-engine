@@ -335,6 +335,7 @@ def test_lab_metric_formatting_and_stale_data_on_mobile(page, base, settings, re
     page.evaluate("window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))")
     expect(page.get_by_text("Highest measured nDCG@10", exact=False)).to_contain_text("Hybrid")
     expect(page.get_by_text("Ranking quality by method", exact=False)).to_be_visible()
+    expect(method.get_by_role("cell")).to_have_text(["0.600", "0.400", "0.500", "0.13", "2.13"])
     response.update(release_id="a"*24, measurement=None, quality=None)
     page.evaluate("window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))")
     expect(page.get_by_text("No compatible measurements", exact=False)).to_be_visible()

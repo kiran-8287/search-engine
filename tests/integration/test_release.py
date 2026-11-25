@@ -282,7 +282,7 @@ def test_lab_report_archive_is_explicit_and_validates_attribution(settings, rele
 def test_lab_uses_only_compatible_measurements_and_matching_judgments(settings, release):
     from types import SimpleNamespace
 
-    from techsearch.evaluation import LAB_DESIGNS, LAB_PROTOCOL, lab_settings
+    from techsearch.evaluation import LAB_DESIGNS, LAB_METHODS, LAB_PROTOCOL, lab_settings
     from techsearch.experiments import save_report
     from techsearch.io import ROUTER_VERSION, digest, write_json
 
@@ -293,7 +293,8 @@ def test_lab_uses_only_compatible_measurements_and_matching_judgments(settings, 
     def measurement(target, split, **overrides):
         report = {"release_id": target.id, "split": split, "lab_protocol": LAB_PROTOCOL, "router": ROUTER_VERSION,
                   "run_id": "fixture-" + split, "methods": LAB_DESIGNS, "lab_settings": lab_settings(settings),
-                  "protocol": catalog["group_fingerprint"], "query_count": 1, "paired_queries": 1}
+                  "protocol": catalog["group_fingerprint"], "query_count": 1, "paired_queries": 1,
+                  "timing_ms": {key: {"warm": {"p50": 10, "p95": 20, "observations": 1}} for key in LAB_METHODS}}
         save_report(settings, target, "lab-" + split, {**report, **overrides})
 
     measurement(SimpleNamespace(id="a" * 24), "test")
@@ -304,7 +305,12 @@ def test_lab_uses_only_compatible_measurements_and_matching_judgments(settings, 
             return answer.json()
 
         assert selected()["measurement"] is None
+        measurement(release, "dev", lab_protocol=LAB_PROTOCOL - 1)
+        assert selected()["measurement"] is None
         measurement(release, "dev")
+        timing_only = selected()
+        assert timing_only["quality"] is None
+        assert timing_only["measurement"]["timing_ms"]["dense"]["warm"]["p50"] == 10
         measurement(release, "test", protocol="different-query-catalog")
         assert selected()["measurement"]["split"] == "dev"
         measurement(release, "test", lab_settings="different-settings")

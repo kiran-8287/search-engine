@@ -6,6 +6,7 @@ import pytest
 from techsearch.compression import CODECS, decode, encode, gaps, pack_postings, unpack_postings
 from techsearch.dense import exact_parent_hits
 from techsearch.evaluation import scores
+from techsearch.experiments import cluster_label_terms, compression_report
 from techsearch.graph import pagerank
 from techsearch.indexing import Index
 from techsearch.preprocessing import analyze
@@ -20,6 +21,40 @@ def test_code_aware_analysis_and_offsets():
     assert tokens[0].aliases == ("all", "promise")
     assert tokens[1].aliases == ("query", "selector")
     assert text[tokens[-1].start:tokens[-1].end] == "<a>"
+
+
+def test_cluster_labels_keep_informative_terms_in_weight_order():
+    terms = ["the", "=", "123", "and", "fetch", "c++", "css-grid", "dom", "unused"]
+    weights = [12, 11, 10, 9, 5, 7, 5, 3, -2]
+    assert cluster_label_terms(terms, weights) == ["c++", "fetch", "css-grid", "dom"]
+    assert cluster_label_terms(terms, weights, limit=2) == ["c++", "fetch"]
+
+
+def test_compression_warms_each_codec_and_rotates_the_same_lookup_batch(monkeypatch):
+    from types import SimpleNamespace
+
+    opened = []
+    batches = []
+
+    class Reader:
+        def __init__(self, path, stack, codec):
+            opened.append(codec)
+            self.batch = []
+            batches.append(self.batch)
+
+        def posting(self, term):
+            self.batch.append(term)
+            return (term, {})
+
+    monkeypatch.setattr("techsearch.experiments.Index", Reader)
+    formats = {codec: {"artifact_bytes": 10} for codec in CODECS}
+    release = SimpleNamespace(path=None, info={"lexical": {"compression": formats}})
+    result = compression_report(release, ["css grid", "grid template"], repeats=3)
+    assert result["terms"] == ["css", "grid", "template"] and result["warmups"] == 1
+    order = list(CODECS)
+    assert opened == order + order + order[1:] + order[:1] + order[2:] + order[:2]
+    assert all(batch == result["terms"] for batch in batches)
+    assert all(len(codec["lookup_decode_ms"]) == 3 for codec in result["codecs"].values())
 
 
 def test_prefix_budget_applies_to_terms_in_the_requested_field():

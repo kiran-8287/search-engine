@@ -85,21 +85,37 @@ def compression_report(release, queries, repeats):
     """Measure decoding and verify each codec returns identical positions."""
     terms = sorted({token.term for query in queries for token in analyze(query)})
     reference = None
-    reports = {}
-    for codec in CODECS:
-        times = []
-        for _ in range(repeats):
+    codecs = list(CODECS)
+    times = {codec: [] for codec in codecs}
+    # Give each codec one untimed pass, then rotate the order of timed
+    # batches. Every batch opens a new reader over the shared OS cache.
+    for trial in range(-1, repeats):
+        offset = max(0, trial) % len(codecs)
+        for codec in codecs[offset:] + codecs[:offset]:
             with ExitStack() as stack:
                 i = Index(release.path, stack, codec)
                 t = perf_counter()
                 postings = [i.posting(term) for term in terms]
-                times.append((perf_counter() - t) * 1000)
+                elapsed = (perf_counter() - t) * 1000
             if reference is not None and postings != reference:
                 raise ValueError(f"Posting encodings differ in {codec}")
-            reference = postings
-        reports[codec] = {**release.info["lexical"]["compression"][codec],
-                          "lookup_decode_ms": times, "median_lookup_decode_ms": statistics.median(times)}
-    return {"terms": terms, "codecs": reports, "repeats": repeats}
+            if reference is None:
+                reference = postings
+            if trial >= 0:
+                times[codec].append(elapsed)
+    reports = {codec: {**release.info["lexical"]["compression"][codec], "lookup_decode_ms": samples,
+                       "median_lookup_decode_ms": statistics.median(samples)} for codec, samples in times.items()}
+    return {"terms": terms, "queries": list(queries), "codecs": reports, "repeats": repeats, "warmups": 1}
+
+
+def cluster_label_terms(terms, weights, limit=5):
+    """Choose terms for display from the positive weights of a projected center."""
+    from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+
+    informative = [(term, weight) for term, weight in zip(terms, weights)
+                   if weight > 0 and term not in ENGLISH_STOP_WORDS and any(char.isalpha() for char in term)]
+    informative.sort(key=lambda item: -item[1])
+    return [term for term, _ in informative[:limit]]
 
 
 def latent_report(service, window, components, clusters, seed, queries):
@@ -149,7 +165,7 @@ def latent_report(service, window, components, clusters, seed, queries):
         silhouette = float(silhouette_score(latent, labels, sample_size=min(1000, len(sample_ids)), random_state=seed))
     terms = list(vocabulary)
     projected_centers = model.cluster_centers_ @ svd.components_
-    representatives = {cluster: [terms[column] for column in np.argsort(-center, kind="stable")[:5]]
+    representatives = {cluster: cluster_label_terms(terms, center)
                        for cluster, center in enumerate(projected_centers) if cluster in labels}
     diagnostics = {"clusters": count, "effective_clusters": effective_clusters, "inertia": float(model.inertia_),
                    "sizes": dict(Counter(map(int, labels))), "silhouette": silhouette, "representative_terms": representatives}

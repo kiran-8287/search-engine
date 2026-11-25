@@ -56,10 +56,15 @@ judged query set.
 - **TAAT versus DAAT** compares the same BM25 queries through fresh readers
   over the warmed filesystem. The median and 95th percentile pool the actual
   timed samples. The experiment also checks equal result IDs, order and
-  scores. Python memory tracing is recorded separately.
+  scores. The current report uses six queries and three timed repeats for
+  each query and strategy. There is no separate warm-up. The readers share
+  the OS file cache, and Python memory tracing is outside the timings.
 - **Compression** shows postings payload and complete representation sizes
   in MiB. Complete size includes dictionary metadata. The decode workload
-  looks up the same analyzed terms for each codec.
+  looks up the same analyzed terms for each codec. Each codec gets one
+  untimed lookup batch. Three measured batches per codec use fresh readers,
+  and the codec order rotates. Reader setup is outside the timer. The table
+  shows the median total time for a batch.
 - **Link authority** compares BM25 to the same BM25 run with MDN PageRank
   reranking. The timed comparison uses their common successful queries.
   Graph size and convergence are available in a disclosure.
@@ -69,8 +74,10 @@ judged query set.
   improvement.
 - **LSI and K-means** explores a sample of documents with truncated SVD and
   K-means. The table shows cluster sizes and terms with the largest weights
-  in projected cluster centers. Silhouette is computed on up to 1,000 of the
-  sampled documents and measures separation within that sample.
+  in projected cluster centers after excluding common English filler words
+  and terms with no letters. This filter applies only to the labels.
+  Silhouette is computed on up to 1,000 of the sampled documents and
+  measures separation within that sample.
 
 ## Generate Lab measurements
 
@@ -89,8 +96,8 @@ is seeded and shuffled for each query. Semantic and Hybrid times include
 query encoding. The interval also includes parsing, retrieval, ranking and
 snippet construction. HTTP transfer, saved pagination and cold starts are
 outside the timing. All five methods use only their common successful queries
-for the displayed percentiles. The export records unavailable and degraded
-cases so the timing denominator remains visible.
+for the displayed percentiles. The summary export counts unavailable and
+degraded searches. The full saved run records the affected queries and reasons.
 
 Evaluation pools the candidates from all compared methods and reuses
 matching judgments. With the default settings it needs judgments through
@@ -102,33 +109,32 @@ and `evaluate --split test --lab --confirm-sealed` use the held-out split.
 
 ## Current measurements
 
-The 24 November 2026 Development run used release
+The 25 November 2026 Development run (`35b15dbf7ed21e49`) used release
 `250a15ecd349951d6c69364c` (15,345 documents) and the unchanged frozen
-catalog. All five methods completed 299 of the 300 queries. The remaining
-query, `title:Abort* timeout`, matched more than the configured 20-term
-prefix limit for every method. The saved run records that rejection.
+catalog. All five methods and BM25 + PageRank completed all 300 queries
+without unavailable or degraded results. Field-scoped prefix searches
+now count terms that occur in the requested field and source scope.
+The previously rejected `title:Abort* timeout` query expands to four
+title terms. The earlier 299-query run is retained as historical evidence.
 
-Field-scoped prefix searches now apply the expansion limit to terms
-present in the requested field and source scope. The same query expands
-to four title terms and returns results from all five methods. The original
-benchmark remains a record of the earlier behavior. A new Development
-run is needed to compare timings under the corrected behavior.
+The older server expected the earlier benchmark format and rejected the
+new report. Restarting it loaded the current compatibility checks and
+restored the timing table while evaluation remained pending.
 
 | Method | Median (ms) | 95th percentile (ms) |
 | --- | ---: | ---: |
-| TF-IDF | 193.87 | 2300.48 |
-| BM25 | 203.78 | 2311.49 |
-| Query likelihood | 228.07 | 2289.93 |
-| Semantic | 403.36 | 2003.49 |
-| Hybrid | 447.19 | 2656.32 |
+| TF-IDF | 121.71 | 1034.80 |
+| BM25 | 127.76 | 1142.17 |
+| Query likelihood | 138.36 | 1030.80 |
+| Semantic | 257.45 | 1115.99 |
+| Hybrid | 285.95 | 1364.33 |
 
-TF-IDF had the lowest median time, and Semantic had the lowest 95th
+TF-IDF had the lowest median time, and query likelihood had the lowest 95th
 percentile. These results describe the Development workload on Windows
 with one timed pass per method per query after warm-up, a candidate
 depth of 150, and up to 100 returned results. The benchmark used
 `OMP_NUM_THREADS=2` and `OPENBLAS_NUM_THREADS=1`.
-Local server and browser checks overlapped part of the run, so small
-timing differences should be treated as observations from this machine.
+Small differences are observations from this run on this machine.
 
 - On the six-query BM25 traversal workload, TAAT and DAAT agreed on IDs,
   order and scores. The fresh-reader medians were 155.21 ms and 161.70 ms
@@ -136,17 +142,21 @@ timing differences should be treated as observations from this machine.
   528.69 ms. The median postings visited was 1,821.5 for both.
 - Fixed-width took 203.58 MiB, variable-byte 62.30 MiB and gamma 53.83
   MiB including their dictionaries. Gamma saved 73.6% against
-  fixed-width. Its median lookup and decode time was 3,851.39 ms
-  compared with 224.59 ms for fixed-width on the sampled terms.
-- For BM25 + PageRank, the median was 7.61 ms lower and the 95th
-  percentile was 236.78 ms higher than BM25 on the paired Development
-  queries. The graph contains 12,597 MDN pages and 106,261 edges and
-  converged after 76 iterations.
+  fixed-width. The median batch lookup and decode times were 208.83 ms
+  for fixed-width, 296.94 ms for variable-byte, and 1,628.03 ms for gamma.
+  Every batch used `===`, `aria-live`, `cors`, `css`, `delegation`, `event`,
+  `grid`, `preflight`, `promise.all` and `value`.
+- BM25 + PageRank measured 132.62 ms median and 1059.59 ms at the 95th
+  percentile over the same 300 queries and BM25 settings. BM25 alone
+  measured 127.76 ms and 1142.17 ms. The graph contains 12,597 MDN pages
+  and 106,261 edges and converged after 76 iterations.
 - The Rocchio demonstration ran on six queries. The LSI sample used
   2,500 documents, 48 dimensions and 12 clusters. Its sampled
-  silhouette was 0.103.
+  silhouette was 0.103. The sample and cluster assignments match the earlier
+  report. The label for the SVG cluster now uses `svg`, `element`,
+  `animated`, `filter` and `attribute`.
 
-**Relevance evaluation is pending.** The matching pool has 12,056
+**Relevance evaluation is pending.** The matching pool has 12,080
 unjudged query/document pairs and zero cached judgments. Both the
 annotation key and model are unset. No provider calls were made and
 the held-out Test set was left sealed. The speed measurements and rank
@@ -158,9 +168,9 @@ CSV export are under `artifacts/runs/250a15ecd349951d6c69364c/`.
 
 ## Screenshots
 
-- [Model comparison](../artifacts/execution/lab-three-tabs/lab-model-comparison.png)
+- [Model comparison](../artifacts/execution/lab-measurements/model-comparison.png)
 - [Try a query](../artifacts/execution/lab-three-tabs/lab-try-query.png)
-- [Course experiments](../artifacts/execution/lab-three-tabs/lab-course-experiments.png)
+- [Course experiments](../artifacts/execution/lab-measurements/course-experiments.png)
 
 The [browser verification record](../artifacts/execution/lab-three-tabs/app-verification.json)
 includes the live Semantic/Hybrid comparison, Search checks, and report
@@ -176,7 +186,7 @@ the matching `lab-dev` or `lab-test` report via its Measurement details.
 
 ## Try a search
 
-Type `Promise.all` in Search and open **Preview** on a result. Try `"event bubbling"` for a phrase or `source:mdn title:promise` for a field constraint. In IR Lab, use **Compare searches** to compare keyword BM25 with TF-IDF. With a dense release, compare Semantic and Hybrid on `wait for several JavaScript promises to finish`. Use **Overview** to check the release and **Saved report release** where offered to choose historical reports.
+Type `Promise.all` in Search and open **Preview** on a result. Try `"event bubbling"` for a phrase or `source:mdn title:promise` for a field constraint. In IR Lab, use **Try a query** to compare BM25 with TF-IDF. With a dense release, compare Semantic and Hybrid on `wait for several JavaScript promises to finish`.
 
 The same service is available from the terminal.
 
