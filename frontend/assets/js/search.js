@@ -173,6 +173,28 @@ function pagination(data) {
     previous = number;
   }
   pages.append(control(data.page + 1, "Next →", "Next"));
+
+  const jump = el("div", null, "page-jump");
+  jump.append("Page", el("input", null), "of " + last);
+  const input = jump.querySelector("input");
+  input.type = "number";
+  input.min = "1";
+  input.max = String(last);
+  input.value = String(data.page);
+  input.addEventListener("change", () => {
+    const wanted = Math.max(1, Math.min(last, Number(input.value) || 1));
+    input.value = String(wanted);
+    if (wanted !== state.page) navigate({ ...state, page: wanted }, { record: "push", searchId: data.search_id, focus: true });
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const wanted = Math.max(1, Math.min(last, Number(input.value) || 1));
+      input.value = String(wanted);
+      if (wanted !== state.page) navigate({ ...state, page: wanted }, { record: "push", searchId: data.search_id, focus: true });
+    }
+  });
+  pages.append(jump);
 }
 
 function enrichVisible(hits, signal) {

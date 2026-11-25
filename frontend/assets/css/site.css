@@ -43,7 +43,7 @@ code, pre { overflow-wrap: anywhere; }
 }
 .skip:focus { position: fixed; z-index: 10; top: .5rem; left: .5rem; padding: .55rem .8rem; background: var(--surface); }
 
-.masthead { position: sticky; z-index: 5; top: 0; border-top: 4px solid var(--accent); border-bottom: 1px solid var(--line); background: var(--paper); }
+.masthead { position: sticky; z-index: 5; top: 0; border-bottom: 1px solid var(--line); background: var(--paper); }
 .masthead-inner {
   display: flex; align-items: center; gap: clamp(1.25rem, 3vw, 3.25rem);
   min-height: 4.45rem; width: min(calc(100% - 3.5rem), 93rem); margin-inline: auto;
@@ -198,10 +198,14 @@ mark { background: #fae9dd; color: inherit; border-radius: .12rem; font-weight: 
 .preview-button { background: transparent; border: 0; padding: .12rem .08rem; color: var(--link); font-size: inherit; text-decoration: underline; text-underline-offset: .18em; }
 .preview-button:hover { color: var(--link-hover); }
 .pages { display: flex; justify-content: center; flex-wrap: wrap; gap: .28rem; align-items: center; padding-block: 1.15rem .6rem; }
-.pages button { border: 0; background: transparent; min-width: 2rem; min-height: 2.15rem; padding: .22rem .45rem; font-size: .87rem; }
-.pages button:not(:disabled):hover { background: var(--subtle); }
-.pages [aria-current] { box-shadow: inset 0 -2px var(--accent); font-weight: 750; }
-.pages .pagination-gap { padding-inline: .24rem; color: var(--muted); }
+.pages button { border: 1px solid var(--line); background: #fff; border-radius: .5rem; min-width: 2rem; min-height: 2.15rem; padding: 0 .45rem; font-size: .87rem; font-weight: 600; color: var(--ink); }
+.pages button:not(:disabled):hover { background: var(--subtle); border-color: var(--muted); }
+.pages button:disabled { opacity: .45; cursor: not-allowed; }
+.pages [aria-current] { box-shadow: inset 0 -2px var(--accent); font-weight: 750; color: var(--accent); border-color: var(--accent); background: #fff4ef; }
+.pages .pagination-gap { padding-inline: .24rem; color: var(--muted); font-size: .9rem; }
+.page-jump { display: inline-flex; align-items: center; gap: .35rem; margin-left: .75rem; font-size: .87rem; color: var(--muted); }
+.page-jump input { width: 2.4rem; padding: .12rem .3rem; font-size: .87rem; border: 1px solid var(--line); border-radius: .4rem; text-align: center; }
+.page-jump input:focus { border-color: var(--accent); outline: 2px solid rgba(198,55,32,.18); outline-offset: 1px; }
 
 .preview { color: var(--ink); min-width: 0; background: var(--paper); }
 .preview:not(:modal) {
