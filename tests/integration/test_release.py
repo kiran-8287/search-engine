@@ -397,6 +397,38 @@ def test_demo_bundle_uses_portable_paths_and_keeps_reports_local(settings, relea
         assert paths == {"data": "data", "artifacts": "artifacts", "runtime": "data/runtime", "frontend": "frontend"}
 
 
+def test_demo_can_include_compatible_lab_summaries_without_annotations(settings, release, tmp_path):
+    from zipfile import ZipFile
+
+    from techsearch.evaluation import LAB_DESIGNS, LAB_PROTOCOL, lab_settings
+    from techsearch.experiments import save_report
+    from techsearch.io import ROUTER_VERSION, digest, write_json
+    from techsearch.packaging import package_demo
+
+    groups = [{"split": "dev", "id": "example"}]
+    protocol = digest(groups)
+    write_json(settings.path("data") / "evaluation/frozen.json", {"groups": groups, "group_fingerprint": protocol})
+    report = {"release_id": release.id, "split": "dev", "methods": LAB_DESIGNS, "lab_protocol": LAB_PROTOCOL,
+              "router": ROUTER_VERSION, "lab_settings": lab_settings(settings), "protocol": protocol,
+              "run_id": "bundle-example"}
+    save_report(settings, release, "lab-dev", report)
+    save_report(settings, release, "latent", {"lab_settings": "outdated"})
+    save_report(settings, release, "compression", {"lab_settings": lab_settings(settings)})
+    save_report(settings, release, "evaluation-lab-dev", {
+        "split": "dev", "protocol": protocol, "measurement_run_id": "bundle-example", "labeled": 1,
+        "disagreement_audit": [{"evidence": "private annotation evidence"}],
+    })
+    bundle = package_demo(settings, release, tmp_path / "lab-demo.zip", with_lab_reports=True)
+    prefix = f"artifacts/reports/{release.id}"
+    with ZipFile(bundle["bundle"]) as archive:
+        assert "data/evaluation/frozen.json" in archive.namelist()
+        assert f"{prefix}/lab-dev.json" in archive.namelist()
+        assert f"{prefix}/compression.json" in archive.namelist()
+        assert f"{prefix}/latent.json" not in archive.namelist()
+        quality = archive.read(f"{prefix}/evaluation-lab-dev.json")
+        assert b'"labeled":1' in quality and b"private annotation evidence" not in quality
+
+
 def test_demo_bundle_excludes_credentials_and_blocks_accidental_copies(settings, release, monkeypatch):
     from zipfile import ZipFile
 

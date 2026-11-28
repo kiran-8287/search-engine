@@ -6,5 +6,5 @@ latency_repeats: 3
 annotation:
   endpoint: https://api.openai.com/v1/chat/completions
   model: null
-  prompt_version: techsearch-relevance-v1
+  prompt_version: techsearch-relevance-v2
   audit_fraction: 0.15

@@ -30,8 +30,9 @@ field constraints continue to work through the search service.
   percentile** describes the slower end of the sample.
 
 Grades range from 0 to 3. Grades 2 and 3 count as relevant for Precision and
-MRR. The Lab leaves quality cells blank with a dash until the matching pooled
-evaluation is complete. It then labels the judgment source. An observed lead
+MRR. The Lab uses a dash until the matching pooled evaluation is complete.
+Automated grades are labeled **AI-assessed relevance**. Expand **Relevance
+evaluation details** for judged-query coverage, model, prompt and export. An observed lead
 belongs to this query set and does not establish a general winner.
 
 The server selects a compatible final Test report if one exists, otherwise
@@ -109,72 +110,27 @@ and `evaluate --split test --lab --confirm-sealed` use the held-out split.
 
 ## Current measurements
 
-The 25 November 2026 Development run (`35b15dbf7ed21e49`) used release
-`250a15ecd349951d6c69364c` (15,345 documents) and the unchanged frozen
-catalog. All five methods and BM25 + PageRank completed all 300 queries
-without unavailable or degraded results. Field-scoped prefix searches
-now count terms that occur in the requested field and source scope.
-The previously rejected `title:Abort* timeout` query expands to four
-title terms. The earlier 299-query run is retained as historical evidence.
+The fixed 50-query Groq Development study is shown when its timing report
+matches the active release and frozen subset. Use **Measurement details**
+to export its timings or the original 300-query report. Quality remains
+pending until all 1,085 top-ten pairs have grades. [Groq study](GROQ_STUDY.md)
 
-The older server expected the earlier benchmark format and rejected the
-new report. Restarting it loaded the current compatibility checks and
-restored the timing table while evaluation remained pending.
+The [course report](PROJECT_REPORT.md) records the current Development
+timings, paired PageRank comparison, workload limits and corpus sizes.
+Read the full saved run under the active release directory in
+`artifacts/runs/`. Lab's **Export measurements** downloads the
+compatible summary. The earlier corpus and timing runs remain historical.
 
-| Method | Median (ms) | 95th percentile (ms) |
-| --- | ---: | ---: |
-| TF-IDF | 121.71 | 1034.80 |
-| BM25 | 127.76 | 1142.17 |
-| Query likelihood | 138.36 | 1030.80 |
-| Semantic | 257.45 | 1115.99 |
-| Hybrid | 285.95 | 1364.33 |
-
-TF-IDF had the lowest median time, and query likelihood had the lowest 95th
-percentile. These results describe the Development workload on Windows
-with one timed pass per method per query after warm-up, a candidate
-depth of 150, and up to 100 returned results. The benchmark used
-`OMP_NUM_THREADS=2` and `OPENBLAS_NUM_THREADS=1`.
-Small differences are observations from this run on this machine.
-
-- On the six-query BM25 traversal workload, TAAT and DAAT agreed on IDs,
-  order and scores. The fresh-reader medians were 155.21 ms and 161.70 ms
-  over 18 timings per strategy. Their 95th percentiles were 521.73 ms and
-  528.69 ms. The median postings visited was 1,821.5 for both.
-- Fixed-width took 203.58 MiB, variable-byte 62.30 MiB and gamma 53.83
-  MiB including their dictionaries. Gamma saved 73.6% against
-  fixed-width. The median batch lookup and decode times were 208.83 ms
-  for fixed-width, 296.94 ms for variable-byte, and 1,628.03 ms for gamma.
-  Every batch used `===`, `aria-live`, `cors`, `css`, `delegation`, `event`,
-  `grid`, `preflight`, `promise.all` and `value`.
-- BM25 + PageRank measured 132.62 ms median and 1059.59 ms at the 95th
-  percentile over the same 300 queries and BM25 settings. BM25 alone
-  measured 127.76 ms and 1142.17 ms. The graph contains 12,597 MDN pages
-  and 106,261 edges and converged after 76 iterations.
-- The Rocchio demonstration ran on six queries. The LSI sample used
-  2,500 documents, 48 dimensions and 12 clusters. Its sampled
-  silhouette was 0.103. The sample and cluster assignments match the earlier
-  report. The label for the SVG cluster now uses `svg`, `element`,
-  `animated`, `filter` and `attribute`.
-
-**Relevance evaluation is pending.** The matching pool has 12,080
-unjudged query/document pairs and zero cached judgments. Both the
-annotation key and model are unset. No provider calls were made and
-the held-out Test set was left sealed. The speed measurements and rank
-changes cannot establish which method is more relevant.
-
-The summary and course reports are under
-`artifacts/reports/250a15ecd349951d6c69364c/`. The full run and ranked
-CSV export are under `artifacts/runs/250a15ecd349951d6c69364c/`.
+The frozen Development and Test splits have 300 groups each. Start with
+Development. If the shared judgment pool is incomplete, the five
+timing rows remain available and the quality cells show a dash.
 
 ## Screenshots
 
-- [Model comparison](../artifacts/execution/lab-measurements/model-comparison.png)
-- [Try a query](../artifacts/execution/lab-three-tabs/lab-try-query.png)
-- [Course experiments](../artifacts/execution/lab-measurements/course-experiments.png)
-
-The [browser verification record](../artifacts/execution/lab-three-tabs/app-verification.json)
-includes the live Semantic/Hybrid comparison, Search checks, and report
-export checks.
+- [Model comparison](../artifacts/execution/groq-dev50/browser/lab-model-comparison.png)
+- [Try a query](../artifacts/execution/groq-dev50/browser/lab-try-query.png)
+- [Course experiments](../artifacts/execution/groq-dev50/browser/lab-course-experiments.png)
+- [Structured answer Preview](../artifacts/execution/course-final/structured-answer-preview.png)
 
 ## API and exports
 
@@ -187,6 +143,8 @@ the matching `lab-dev` or `lab-test` report via its Measurement details.
 ## Try a search
 
 Type `Promise.all` in Search and open **Preview** on a result. Try `"event bubbling"` for a phrase or `source:mdn title:promise` for a field constraint. In IR Lab, use **Try a query** to compare BM25 with TF-IDF. With a dense release, compare Semantic and Hybrid on `wait for several JavaScript promises to finish`.
+
+Fuzzy mode can expand an unknown term such as `promsie.all` to `promise.all`. A typo already present in the vocabulary is treated as a literal match. In the current corpus, `addEventListner` is one such term because it appears in a saved code block. Inspect the expansion trace and highlighted evidence to tell whether correction ran.
 
 The same service is available from the terminal.
 
@@ -247,16 +205,16 @@ python -m techsearch benchmark --split dev --ablations
 A benchmark measures execution and saves rankings. It does not supply judgments. Evaluate the matching saved run for the active release.
 
 ```sh
-python -m techsearch evaluate --split dev
+python -m techsearch evaluate --split dev --lab
 ```
 
 That command uses existing judgments and reports missing pairs. New annotation is an explicit network operation. Only run the following after configuring your annotation key and a model from the configured provider, and when you intend to send pooled excerpts and incur any provider charges.
 
 ```sh
-python -m techsearch evaluate --split dev --annotate --limit 50
+python -m techsearch evaluate --split dev --lab --annotate --limit 50 --max-requests 75
 ```
 
-`--limit` caps newly judged candidate pairs per invocation. Audit or adjudication can make extra requests per pair. The command caches judgments under `data/evaluation/annotations/` so a rerun can resume the pool. Use the same `--ablations` flag as the benchmark when applicable. For held-out evaluation after finalizing settings, use `python -m techsearch evaluate --split test --confirm-sealed`. A blocked or partial run can return exit code 2 and still write status. Metrics such as nDCG and MRR become available when the pool is judged. Read pending reports as unavailable. A numeric zero is a measured value. Search feedback stays in `data/runtime/` and does not become a benchmark judgment.
+`--limit` caps newly judged pairs per invocation. The required `--max-requests` caps every provider attempt, including retry, audit and adjudication. These are request controls. Configure `TECHSEARCH_ANNOTATION_API_KEY` in local `.env` and `annotation.model` for the approved provider. The proposed pilot's maximum of 75 requests requires authorization and can stop before all 50 pairs finish. The command caches each validated stage under `data/evaluation/annotations/` and can resume within a newly authorized budget. An insufficient-evidence response stays pending. For held-out evaluation after finalizing the Development workflow, use `python -m techsearch evaluate --split test --lab --confirm-sealed`. A blocked or partial run can return exit code 2 and still write status. Search feedback stays in `data/runtime/`.
 
 ## Earlier verification captures
 

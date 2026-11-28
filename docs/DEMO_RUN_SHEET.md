@@ -1,54 +1,110 @@
-# Local demo run sheet
+# Course demo run sheet
 
-Use `artifacts/techsearch-demo-250a15ecd349951d6c69364c-share.zip` for
-release `250a15ecd349951d6c69364c` with the earlier seven-section IR Lab.
-The source checkout uses the [three-tab IR Lab](IR_LAB.md).
-The archive is local. Ask the maintainer for the ZIP and its SHA-256.
-The ZIP supplies already built search assets. Use the repository clone if you
-want to work with the raw source exports or build indexes yourself.
+Use the locally prepared **techsearch-course-demo-groq-dev50.zip**. It contains the
+three-tab Lab, current Search and source code, prepared lexical and dense
+indexes, the pinned local encoder, compatible Lab report summaries and
+course experiments, configuration, source attribution, and a blank
+credential template. Keep the attribution notices with the bundle.
+The Lab includes the fixed 50-query Groq timing report, the original
+300-query timing export, and pending relevance status. Test remains sealed.
 
-| Detail | Value |
-| --- | --- |
-| Archive size | 513,370,800 bytes |
-| ZIP members | 92 |
-| SHA-256 | `ac34fb0c8b4eafb73b161e0e92d85841204fb2294f7822bffb6cfeace1e0821a` |
-| Release | `250a15ecd349951d6c69364c` with 15,345 documents and 197,628 passages |
-| Encoder | All-MiniLM-L6-v2 revision `1110a243fdf4706b3f48f1d95db1a4f5529b4d41` |
+## Start the prepared demo
 
-**Unsafe to distribute:** the earlier
-`artifacts/techsearch-demo-250a15ecd349951d6c69364c.zip` contains a
-populated Stack Exchange credential field. The file and its
-[historical verification](../artifacts/execution/offline-demo-250a15ecd349951d6c69364c.json)
-are retained as private evidence. The original ZIP has an adjacent
-`.UNSAFE-TO-DISTRIBUTE.txt` notice.
+1. Extract the ZIP into a writable directory and open a terminal there.
+2. Use Python 3.11 or 3.12 to install dependencies. Initial dependency
+   installation needs internet access or a suitable local wheelhouse.
+3. Run the existing server start command. Model and corpus preparation
+   are already done in this prepared demo.
 
-The share ZIP includes the current frontend, app code, portable configuration,
-blank `.env.example`, source attribution, active indexes and passage vectors,
-and the pinned encoder. Raw exports, checkpoints, private runtime records,
-saved experiment or annotation reports, and other archives stay in the source
-workspace. The Lab's live comparisons and build statistics are available in
-the demo.
+### Windows PowerShell
 
-The share ZIP passed CRC verification and was extracted to a temporary
-directory. The eight frontend files matched the checkout byte for byte,
-and the release and 12 encoder files matched their manifests. Keyword
-Search, Semantic, and Hybrid returned 57, 100, and 100 results for the smoke
-queries. Chromium checked Preview, all seven Lab sections, a live
-Semantic/Hybrid comparison and ranking export. The Python process and browser
-page requests were restricted to loopback. The checks used the existing
-Windows dependencies and Chromium. A clean dependency installation and
-Linux and macOS runs remain unverified. The local record is
-`artifacts/execution/share-demo-250a15ecd349951d6c69364c.json`.
+```powershell
+py -3.12 scripts/bootstrap.py --no-tests
+.\.venv\Scripts\python.exe -m techsearch doctor --offline
+.\.venv\Scripts\python.exe scripts/start.py --host localhost --port 8000
+```
 
-The credential audit found no configured TechSearch key in the share ZIP.
-Two example PEM blocks inside the frozen corpus match the pinned MDN
-Web Crypto documentation. The original source excerpts remain intact.
+### Linux or macOS
 
-1. Unpack the ZIP into a writable directory and work from that directory. The archive includes the active release, frontend, source notices, and local encoder. Keep the notices with the bundle.
-2. Run `python scripts/bootstrap.py --no-tests` with Python 3.11 or 3.12 on the presentation OS. For a disconnected installation, add `--wheelhouse PATH` with a wheelhouse prepared for that OS and Python version, including CPU PyTorch and the build dependencies. The ZIP supplies the runtime assets. Verify dependency installation separately on the destination machine.
-3. Run `python -m techsearch doctor --offline` using the new environment's Python (`.venv\Scripts\python.exe` on Windows or `.venv/bin/python` on Linux/macOS). This checks the release and the bundled encoder. The extracted demo can run from its frozen artifacts.
-4. Run `python scripts/start.py --host localhost --port 8000`. Open Search at `http://localhost:8000/`. Search for `CORS`, open evidence, inspect attribution, and demonstrate paging. Use `source:mdn "Promise.all"` to show a source constraint and a phrase-safe title match. Legacy flat Stack Overflow bodies and answers still lack reliable phrase boundaries.
-5. At `http://localhost:8000/lab`, open **Compare searches** and compare Semantic and Hybrid on `browser event propagation`. Use the execution trace to show which branches ran. **Overview** and **Link analysis** show active release metadata. The source workspace has the historical reports. See the [IR Lab guide](IR_LAB.md) for the report and Development/Test controls.
-6. To package an updated active release, run `python -m techsearch package-demo --output artifacts/techsearch-demo-current.zip` using the project environment and a new filename. Verify the resulting ZIP on the destination before presenting.
+```sh
+python3.12 scripts/bootstrap.py --no-tests
+./.venv/bin/python -m techsearch doctor --offline
+./.venv/bin/python scripts/start.py --host localhost --port 8000
+```
 
-See the [execution report](EXECUTION_REPORT.md) for the verified release and evidence scope.
+On Windows, an explicit path to an installed Python 3.12 interpreter also
+works if the `py` launcher is unavailable. Keep the terminal open. Use
+Ctrl+C to stop the server.
+
+## Present the project
+
+- Open [Search](http://localhost:8000/). Search for `Promise.all`, open a
+  Preview, and use the next page.
+- Search for `source:stackoverflow title:"handling errors in promise.all" code:arrayOfValuesOrErrors`.
+  The Preview shows code from the accepted answer and its attribution.
+- Open [IR Lab](http://localhost:8000/lab). Under **Model comparison**,
+  show the saved Development timings and the separate quality status.
+  Under **Try a query**, compare Semantic and Hybrid for `wait for several JavaScript promises to finish`.
+  Under **Course experiments**, show codec sizes, TAAT/DAAT and the
+  exploratory clusters.
+
+## Package and history
+
+Package an updated compatible release with a new output filename.
+
+```sh
+python -m techsearch package-demo --with-lab-reports --output artifacts/techsearch-course-demo-groq-dev50.zip
+```
+
+The public clone includes the legacy raw exports for an independent build.
+The prepared course demo contains different, already-built source data.
+The selected raw files and counts are in the [course report](PROJECT_REPORT.md).
+
+The previous `techsearch-course-demo.zip` and
+`techsearch-demo-250a15ecd349951d6c69364c-share.zip` remain as historical evidence.
+The earlier `techsearch-demo-250a15ecd349951d6c69364c.zip` is
+**unsafe to distribute**. Its adjacent warning records why. Both older
+archives are outside the course bundle.
+
+## Setup evidence
+
+The original preparation check used an independent Windows Python 3.12.16 environment,
+the checked-in 16-parent fixture data and the verified local encoder.
+It exercised input inspection, preprocess, dense index build, deep validation and Semantic search.
+The clean fixture used a copied pinned encoder, so it did not test a new model download.
+
+The 25 November archive check installed fresh Windows dependencies and served
+the prepared release. The evaluation-ready archive uses the same corpus and encoder.
+Other operating systems and disconnected dependency installation were outside
+those setup checks.
+
+[Original clean Windows setup](../artifacts/execution/course-final/clean-setup.json)
+
+## Groq Development archive receipt
+
+`techsearch-course-demo-groq-dev50.zip` contains 104 files and is 646,458,080 bytes.
+Its SHA-256 is `9e2a5ebcb97e15a2db5c26e3144b1ea465526bed3589605227d17827e03f2f18`.
+ZIP integrity, configured-credential scanning, all eight frontend files, and
+33 release and encoder files passed verification. The archive has the frozen
+50-query profile and the original and subset timing exports. Its relevance
+export records zero judgments and 1,085 pending pairs from before the pilot.
+The live repository records the later [pilot reviews](GROQ_STUDY.md#pilot-outcome-on-28-november-2026) and the [blind human review](GROQ_V3.md). The final-results archive will be rebuilt after the evaluation is accepted.
+
+On Windows, the extracted app passed `doctor --offline` and Chromium smoke
+checks for Search, Semantic, Hybrid, the three Lab tabs, Preview, charts, and
+the current exports. The server ran with the previously installed Windows
+dependencies and a guard that blocked external DNS and TCP. The browser
+reported zero external page requests and zero JavaScript errors. Fresh or
+disconnected dependency installation and other operating systems remain
+unverified for this archive.
+
+[Archive receipt](../artifacts/execution/groq-dev50/bundle-contents.json) ·
+[Extracted browser checks](../artifacts/execution/groq-dev50/extracted-browser/app-verification.json)
+
+## Evaluation-ready archive receipt
+
+The preceding `techsearch-course-demo-evaluation-ready.zip` remains available
+locally. It has 100 files and the original 300-query timing and relevance
+status reports. Its SHA-256 is
+`52fa3407e005aee524a753ed6aadff7c4bab2a519579cd70358c65b8fa7d6441`.
+[Historical archive receipt](../artifacts/execution/evaluation-ready-2026-11-27/bundle-contents.json)

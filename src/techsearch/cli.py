@@ -81,6 +81,10 @@ def parser():
             cmd.add_argument("--resume", action="store_true", required=True, help="Resume offline stages")
     cmd = commands.add_parser("validate-release", help="Verify active artifact checksums and structure")
     cmd.add_argument("--deep", action="store_true", help="Read every document and cross-check every compressed posting")
+    cmd = commands.add_parser("prepare-review", help="Write the offline review page for the frozen Development study")
+    cmd.add_argument("--output", type=Path, help="Output HTML path")
+    cmd = commands.add_parser("compare-review", help="Verify a human export and score the complete Development pool")
+    cmd.add_argument("file", type=Path, help="Exported study or compatible pilot JSON")
     cmd = commands.add_parser("search", help="Search from the same service used by the API")
     cmd.add_argument("query")
     cmd.add_argument("--mode", choices=("auto", *MODES), default="auto")
@@ -103,14 +107,25 @@ def parser():
         suite = cmd.add_mutually_exclusive_group()
         suite.add_argument("--ablations", action="store_true")
         suite.add_argument("--lab", action="store_true", help="Use the five Lab methods and paired BM25 + PageRank")
+        cmd.add_argument("--profile", choices=[evaluation.GROQ_PROFILE], help="Use the fixed 50-query Development study")
         if name == "evaluate":
             cmd.add_argument("--annotate", action="store_true", help="Explicitly send pooled evidence to the configured provider")
             cmd.add_argument("--limit", type=int, default=50, help="New pooled judgments allowed in this invocation")
+            cmd.add_argument("--max-requests", type=int, help="Required with --annotate. Caps all provider attempts in this invocation")
+            cmd.add_argument("--judge-version", choices=("v1", "v2"), default="v1", help="Select the Groq judging protocol")
+            cmd.add_argument("--authorize-pilot-attempts", type=int, metavar="75",
+                             help="Explicitly authorize the proposed additional v2 pilot allowance")
+            phases = cmd.add_mutually_exclusive_group()
+            phases.add_argument("--pilot", action="store_true", help="Judge only the fixed 50-pair Groq pilot")
+            phases.add_argument("--pilot-review", choices=("AI", "human"), help="Record the pilot reviewer after checking its grades")
+            phases.add_argument("--check-model", action="store_true", help="Check account model access without generating grades")
+            phases.add_argument("--prepare-pilot", action="store_true", help="Freeze the v2 pilot without contacting the judge")
     cmd = commands.add_parser("serve", help="Start the app against an existing release")
     cmd.add_argument("--host", default="localhost")
     cmd.add_argument("--port", type=int, default=8000)
     cmd = commands.add_parser("package-demo", help="Write an offline local demonstration ZIP from the active release")
     cmd.add_argument("--output", type=Path)
+    cmd.add_argument("--with-lab-reports", action="store_true", help="Include compatible Lab measurements and course reports")
     return cli
 
 
@@ -186,6 +201,10 @@ def dispatch(args, settings):
         release = pipeline.open_release(settings, verify=True, deep=args.deep)
         return {"release_id": release.id, "status": "validated", "deep": args.deep}
     release = pipeline.open_release(settings, verify=name == "package-demo")
+    if name == "compare-review":
+        from .human_review import compare
+
+        return compare(settings, release, args.file)
     if name == "build-graph":
         output = settings.path("artifacts") / "reports" / release.id / "graph-ranks.json"
         measured = graph.build_graph(release.path, release.info["graph_config"], output=output)
@@ -193,8 +212,13 @@ def dispatch(args, settings):
     if name == "package-demo":
         from .packaging import package_demo
 
-        return package_demo(settings, release, args.output)
+        return package_demo(settings, release, args.output, with_lab_reports=args.with_lab_reports)
     service = SearchService(settings, release)
+    if name == "prepare-review":
+        from .human_review import prepare
+
+        with pipeline.writer_lock(settings.root):
+            return prepare(settings, service, args.output)
     if name == "search":
         return service.search(args.query, mode=args.mode, source=args.source, topic=args.topic, ranker=args.ranker,
                               strategy=args.strategy, depth=args.depth)
@@ -202,14 +226,34 @@ def dispatch(args, settings):
         return as_report(service, args)
     if name == "benchmark":
         sealed(args)
-        return evaluation.benchmark(settings, service, args.split, ablations=args.ablations, lab=args.lab)
+        if args.profile and (args.split != "dev" or not args.lab):
+            raise ValueError("The Groq subset requires --split dev --lab.")
+        return evaluation.benchmark(settings, service, args.split, ablations=args.ablations, lab=args.lab,
+                                    profile=args.profile)
     if name == "evaluate":
         sealed(args)
+        if args.profile and (args.split != "dev" or not args.lab):
+            raise ValueError("The Groq subset requires --split dev --lab.")
+        if (args.pilot or args.pilot_review or args.check_model or args.prepare_pilot or args.judge_version == "v2") and not args.profile:
+            raise ValueError("Pilot and account checks require --profile groq-dev50.")
+        if args.prepare_pilot and (args.judge_version != "v2" or args.annotate):
+            raise ValueError("Use --judge-version v2 and omit --annotate to prepare the pilot offline.")
+        if args.authorize_pilot_attempts is not None and not (args.judge_version == "v2" and args.annotate and args.pilot):
+            raise ValueError("Additional authorization applies only to a v2 pilot run.")
+        if args.check_model:
+            if args.annotate:
+                raise ValueError("--check-model does not generate judgments.")
+            return evaluation.check_groq_model(evaluation.groq_key(settings.evaluation["annotation"]))
         if not 1 <= args.limit <= 200:
             raise ValueError("Use an annotation budget between 1 and 200 judgments.")
+        if args.annotate and (args.max_requests is None or args.max_requests < 1):
+            raise ValueError("Set --max-requests to the authorized positive provider request limit.")
         with pipeline.writer_lock(settings.root):
             return evaluation.evaluate(settings, service, args.split, annotate=args.annotate,
-                                       limit=args.limit, ablations=args.ablations, lab=args.lab)
+                                       limit=args.limit, max_requests=args.max_requests, ablations=args.ablations, lab=args.lab,
+                                       profile=args.profile, pilot=args.pilot, pilot_review=args.pilot_review,
+                                       judge_version=args.judge_version, prepare_pilot=args.prepare_pilot,
+                                       authorize_pilot_attempts=args.authorize_pilot_attempts)
     raise ValueError("Unknown command.")
 
 

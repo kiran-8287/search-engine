@@ -147,7 +147,13 @@ def build(settings, lexical_only=False):
             if model:
                 dense_stats = reuse_component(previous, components, "dense", folder, PASSAGE_FILES)
                 if dense_stats is None:
-                    dense_stats = dense.build_dense(folder, settings, model)
+                    verified_previous = None
+                    if previous and previous.info.get("dense"):
+                        try:
+                            verified_previous = open_release(settings, previous.id, verify=True)
+                        except ReleaseUnavailable:
+                            pass
+                    dense_stats = dense.build_dense(folder, settings, model, previous=verified_previous)
             graph_stats = reuse_component(previous, components, "graph", folder, {"graph.json"})
             if graph_stats is None:
                 graph_stats = graph.build_graph(folder, graph_config)

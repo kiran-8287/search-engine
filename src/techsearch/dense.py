@@ -6,6 +6,7 @@ import re
 import shutil
 import sys
 import tempfile
+from contextlib import ExitStack
 from itertools import groupby
 from time import perf_counter
 
@@ -69,8 +70,12 @@ def load_encoder(settings, manifest, verify=False):
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
     try:
         from sentence_transformers import SentenceTransformer
+    except ModuleNotFoundError as error:
+        if error.name == "sentence_transformers":
+            raise DenseUnavailable("Install TechSearch with the dense extra.") from error
+        raise DenseUnavailable("A dense dependency is missing. See the server log for the cause.") from error
     except ImportError as error:
-        raise DenseUnavailable("Install TechSearch with the dense extra.") from error
+        raise DenseUnavailable("A dense dependency could not be imported. See the server log for the cause.") from error
     model = SentenceTransformer(str(target), device="cpu", local_files_only=True, trust_remote_code=False,
                                 model_kwargs={"use_safetensors": True})
     special = model.tokenizer.num_special_tokens_to_add()
@@ -133,7 +138,12 @@ def chunk_rows(documents, tokenizer, limit, overlap):
             first_token = max(first_token + 1, past_last_token - overlap)
 
 
-def build_dense(directory, settings, manifest):
+def passage_inputs(document):
+    """Return the inputs that determine how one parent is split and encoded."""
+    return [(section_key(row)[1:], row[1]["ordinal"], row[1]["text"]) for row in passage_segments((document,))]
+
+
+def build_dense(directory, settings, manifest, previous=None):
     started = perf_counter()
     model = load_encoder(settings, manifest, verify=True)
     dimension_method = getattr(model, "get_embedding_dimension", None) or model.get_sentence_embedding_dimension
@@ -145,8 +155,22 @@ def build_dense(directory, settings, manifest):
     parents = []
     documents = Documents(directory)
     count = 0
-    with tempfile.TemporaryFile(dir=directory) as vector_file:
+    reused = 0
+    with ExitStack() as stack:
+        vector_file = stack.enter_context(tempfile.TemporaryFile(dir=directory))
         batch = []
+        prior = None
+        if previous is not None and (previous.info.get("dense") or {}).get("fingerprint") == revision:
+            old_documents = Documents(previous.path)
+            old_passages = Passages(previous.path)
+            if (old_passages.vectors.shape[1] == dimension
+                    and np.all(old_passages.parents[:-1] <= old_passages.parents[1:])):
+                prior = (old_documents.stable_to_doc, stack.enter_context(old_documents.reader()),
+                         old_passages, stack.enter_context(old_passages.reader()))
+
+        def check_budget(total):
+            if total * dimension * 4 > limits["max_dense_bytes"] or total > limits["max_dense_passages"]:
+                raise ValueError("Dense build exceeds configured passage or byte budget.")
 
         def cache_path(key):
             return filesystem_path(cache_home / key[:2] / f"{key}.npy")
@@ -178,8 +202,7 @@ def build_dense(directory, settings, manifest):
                         np.save(cache, vector, allow_pickle=False)
             for parent, answer, spans, _, key in batch:
                 index = count + 1
-                if index * dimension * 4 > limits["max_dense_bytes"] or index > limits["max_dense_passages"]:
-                    raise ValueError("Dense build exceeds configured passage or byte budget.")
+                check_budget(index)
                 vector_file.write(vectors[key].tobytes())
                 parents.append(parent)
                 yield {"row": count, "parent": parent, "answer_id": answer, "spans": spans}
@@ -187,12 +210,39 @@ def build_dense(directory, settings, manifest):
             batch.clear()
             if count and count % (batch_size * 32) == 0:
                 print(f"Dense build: {count:,} passages written; resumable vectors cached.", file=sys.stderr, flush=True)
+        def reusable_range(document):
+            if prior is None:
+                return None
+            stable_to_doc, old_document, old_passages, _ = prior
+            old_id = stable_to_doc.get(document["id"])
+            if old_id is None or passage_inputs(document) != passage_inputs(old_document(old_id)):
+                return None
+            return (int(old_passages.parents.searchsorted(old_id, side="left")),
+                    int(old_passages.parents.searchsorted(old_id, side="right")))
+
         def passages():
-            rows = chunk_rows(documents, model.tokenizer, settings.dense["chunk_tokens"], settings.dense["overlap_tokens"])
-            for parent, answer, spans, text in rows:
-                batch.append((parent, answer, spans, text, digest(text)))
-                if len(batch) >= batch_size:
+            nonlocal count, reused
+            for document in documents:
+                indexes = reusable_range(document)
+                if indexes is not None:
                     yield from flush()
+                    start, end = indexes
+                    _, _, old_passages, read_passage = prior
+                    check_budget(count + end - start)
+                    vector_file.write(old_passages.vectors[start:end].tobytes())
+                    parents.extend([document["doc"]] * (end - start))
+                    for row in range(start, end):
+                        passage = read_passage(row)
+                        yield {**passage, "row": count, "parent": document["doc"]}
+                        count += 1
+                        reused += 1
+                    continue
+                rows = chunk_rows((document,), model.tokenizer, settings.dense["chunk_tokens"],
+                                  settings.dense["overlap_tokens"])
+                for parent, answer, spans, text in rows:
+                    batch.append((parent, answer, spans, text, digest(text)))
+                    if len(batch) >= batch_size:
+                        yield from flush()
             yield from flush()
         write_indexed_jsonl(directory / "passages.jsonl", directory / "passages.offsets", passages())
         vector_file.seek(0)
@@ -201,7 +251,7 @@ def build_dense(directory, settings, manifest):
             shutil.copyfileobj(vector_file, output)
         with atomic_file(directory / "passage-parents.npy") as output:
             np.save(output, np.asarray(parents, dtype="<u4"), allow_pickle=False)
-    return {"passages": count, "dimension": dimension, "model": manifest, "fingerprint": revision,
+    return {"passages": count, "passages_reused": reused, "dimension": dimension, "model": manifest, "fingerprint": revision,
             "bytes": (directory / "vectors.npy").stat().st_size,
             "vector_payload_bytes": count * dimension * 4, "seconds": perf_counter() - started}
 

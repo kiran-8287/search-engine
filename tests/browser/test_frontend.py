@@ -329,13 +329,38 @@ def test_lab_metric_formatting_and_stale_data_on_mobile(page, base, settings, re
     page.go_back()
     expect(method.get_by_role("cell").nth(3)).to_have_text("0.13")
 
-    response["quality"] = {"label_type": "AI-judged", "sample_counts": dict.fromkeys(LAB_METHODS, 8),
+    response["quality"] = {"label_type": "AI-judged", "labeled": 18, "pending": 0, "pooled_queries": 8,
+                           "fully_judged_queries": 8, "annotation_model": "fixture judge", "prompt_version": "fixture protocol",
+                           "sample_counts": dict.fromkeys(LAB_METHODS, 8),
                            "aggregates": {key: {"nDCG@10": .6 + i * .04, "P@10": .4, "MRR@10": .5}
                                           for i, key in enumerate(LAB_METHODS)}}
     page.evaluate("window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))")
     expect(page.get_by_text("Highest measured nDCG@10", exact=False)).to_contain_text("Hybrid")
     expect(page.get_by_text("Ranking quality by method", exact=False)).to_be_visible()
     expect(method.get_by_role("cell")).to_have_text(["0.600", "0.400", "0.500", "0.13", "2.13"])
+    expect(page.get_by_text("AI-assessed relevance", exact=False).first).to_be_visible()
+    page.get_by_text("Relevance evaluation details", exact=True).click()
+    expect(page.get_by_text("8 of 8 queries with candidates are fully judged.", exact=True)).to_be_visible()
+    expect(page.get_by_text("fixture judge", exact=False)).to_be_visible()
+    expect(page.get_by_role("link", name="Export relevance evaluation")).to_have_attribute(
+        "href", "/api/v1/exports/reports/evaluation-lab-dev")
+    response["quality"]["status"] = "partial"
+    response["quality"]["pending"] = 1
+    page.evaluate("window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))")
+    expect(method.get_by_role("cell")).to_have_text(["—", "—", "—", "0.13", "2.13"])
+    expect(page.get_by_text("Highest measured nDCG@10", exact=False)).to_have_count(0)
+    run.update(profile="groq-dev50", run_id="study-fixture", query_count=50, paired_queries=50)
+    response["full_development_timing"] = True
+    response["quality"].update(status="available", pending=0, provider="Groq", profile="groq-dev50",
+                               sample_counts=dict.fromkeys(LAB_METHODS, 50), pilot_judged=50, pilot_pairs=50)
+    page.evaluate("window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))")
+    expect(page.get_by_text("50 Development queries · Groq AI-assessed relevance", exact=True)).to_be_visible()
+    expect(page.get_by_text("Ranking quality by method", exact=False)).to_be_visible()
+    page.get_by_text("Measurement details", exact=True).click()
+    expect(page.get_by_role("link", name="Export measurements", exact=True)).to_have_attribute(
+        "href", "/api/v1/exports/reports/lab-groq-dev50")
+    expect(page.get_by_role("link", name="Export original 300-query Development timing report")).to_have_attribute(
+        "href", "/api/v1/exports/reports/lab-dev")
     response.update(release_id="a"*24, measurement=None, quality=None)
     page.evaluate("window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))")
     expect(page.get_by_text("No compatible measurements", exact=False)).to_be_visible()

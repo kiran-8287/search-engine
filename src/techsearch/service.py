@@ -1,10 +1,11 @@
 """Single ranking entry point for Search, Lab, CLI and evaluation."""
 from __future__ import annotations
 
+import logging
 import threading
 from collections import defaultdict
 from contextlib import ExitStack
-from time import perf_counter
+from time import monotonic, perf_counter
 from urllib.parse import quote
 
 from . import graph
@@ -14,9 +15,12 @@ from .feedback import Runtime, rocchio, search_id
 from .indexing import Index, IndexFiles
 from .io import ROUTER_VERSION, digest, read_json
 from .preprocessing import analyze
-from .query import MODES, IDENTIFIER, Matcher, QueryError, lex, parse
+from .query import CAMEL_IDENTIFIER, DOTTED_IDENTIFIER, MODES, Matcher, QueryError, lex, parse
 from .repository import Documents
 from .retrieval import fuse, lexical
+
+logger = logging.getLogger(__name__)
+DENSE_RETRY_SECONDS = 30
 
 
 def auto_mode(text, search):
@@ -30,7 +34,10 @@ def auto_mode(text, search):
     if any(token.kind == "prefix" for token in tokens):
         return "prefix", "bounded prefix"
     terms = list(analyze(text))
-    if any(IDENTIFIER.search(token.value) for token in tokens) or any(not term.term[0].isalnum() for term in terms):
+    has_exact_syntax = any(DOTTED_IDENTIFIER.fullmatch(token.value) for token in tokens)
+    has_operator = any(not term.term[0].isalnum() for term in terms)
+    single_camel_identifier = len(terms) == 1 and bool(CAMEL_IDENTIFIER.search(text))
+    if has_exact_syntax or has_operator or single_camel_identifier:
         return "keyword", "API identifier or operator"
     return "hybrid", "conceptual or ambiguous words"
 
@@ -121,6 +128,7 @@ class SearchService:
         self.runtime = Runtime(settings.path("runtime")) if persistent else None
         self.dense = None
         self.dense_error = None
+        self._dense_retry_at = 0.0
         self.dense_lock = threading.RLock()
         self.topics = sorted(set(settings.scope["mdn_roots"].values()) | set(settings.scope["browser_tags"]))
         self.documents = Documents(release.path)
@@ -138,14 +146,19 @@ class SearchService:
 
     def require_dense(self):
         with self.dense_lock:
-            if self.dense_error:
+            has_dense_index = bool(self.release.info.get("dense"))
+            if self.dense_error and (not has_dense_index or monotonic() < self._dense_retry_at):
                 raise DenseUnavailable(self.dense_error)
             if self.dense is None:
                 try:
                     self.dense = Dense(self.release, self.settings)
                 except (ImportError, RuntimeError, OSError, ValueError) as error:
                     self.dense_error = str(error) if isinstance(error, DenseUnavailable) else "Dense encoder could not be opened. Check the local model and dense dependencies."
+                    self._dense_retry_at = monotonic() + DENSE_RETRY_SECONDS
+                    if has_dense_index:
+                        logger.warning("Dense encoder initialization failed for release %s", self.release.id, exc_info=True)
                     raise DenseUnavailable(self.dense_error) from error
+                self.dense_error = None
             return self.dense
 
     def retrieve_candidates(self, index, parsed, query_terms, eligible, config, trace, *, manual, boolean_constraints):

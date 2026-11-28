@@ -15,7 +15,7 @@ SCHEMA_VERSION = 2
 INDEX_VERSION = 2
 ANALYZER_VERSION = "web-identifiers-v2"
 CHUNK_VERSION = "section-token-spans-v1"
-ROUTER_VERSION = "rules-v1"
+ROUTER_VERSION = "rules-v2"
 
 
 class WorkloadError(ValueError):

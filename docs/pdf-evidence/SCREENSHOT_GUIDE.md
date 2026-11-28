@@ -1,6 +1,6 @@
 # Screenshot guide
 
-All 18 PNGs came from the current local app after its readiness endpoint returned release **`250a15ecd349951d6c69364c`**. “Active” in the table means this release. The capture used Chromium 159.0.8154.6, a 1440 × 1000 viewport, device scale factor 1, normal light theme and 100% zoom. The browser waited for the relevant results, panels, and fonts. Playwright reported zero page errors. No source pages or external resources were opened.
+All 18 PNGs came from the earlier local app after its readiness endpoint returned release **`250a15ecd349951d6c69364c`**. “Active” in the table means active at the time. The capture used Chromium 159.0.8154.6, a 1440 × 1000 viewport, device scale factor 1, normal light theme and 100% zoom. Playwright reported zero page errors. See the [course report](../PROJECT_REPORT.md) for current screenshots.
 
 For Lab comparisons, the default settings shown are all sources, all topics, BM25, TAAT, no authority and no MMR, unless the row specifies a change. Field and Boolean queries may set their own constraints. The two columns intentionally use the same mode for screenshots 08–12 so each shows the requested behavior. Captured result totals refer to the saved ranking, which is capped at 100. The visible milliseconds in a comparison are timings from that interaction.
 

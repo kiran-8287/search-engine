@@ -58,6 +58,7 @@ function chart(title, bars, maximum, format) {
 const metricKeys = ["nDCG@10", "P@10", "MRR@10"];
 function validQuality(run, quality) {
   return Boolean(run && quality && ["AI-judged", "human", "mixed"].includes(quality.label_type) &&
+    !["blocked", "partial"].includes(quality.status) && (quality.pending ?? 0) === 0 &&
     Object.keys(METHODS).every(key => quality.sample_counts?.[key] === run.paired_queries &&
       metricKeys.every(metric => {
         const value = quality.aggregates?.[key]?.[metric];
@@ -71,19 +72,22 @@ function leaders(entries, places, descending) {
   return rounded.filter(([, value]) => value === best).map(([name]) => name);
 }
 
-export function models({ documents, measurement: run, quality, search_settings: settings }) {
+export function models({ documents, measurement: run, quality, search_settings: settings, full_development_timing }) {
   const content = el("div");
   const rated = validQuality(run, quality);
   const timings = run?.timing_ms || {};
   const methods = Object.entries(METHODS);
   if (run) {
     const split = run.split === "test" ? "Final test" : "Development";
-    const judged = rated ? { "AI-judged": "AI-judged", human: "Human judgments", mixed: "Mixed judgments" }[quality.label_type]
+    const judged = rated ? { "AI-judged": quality.provider === "Groq" ? "Groq AI-assessed relevance" : "AI-assessed relevance",
+      human: "Human judgments", mixed: "Mixed judgments" }[quality.label_type]
       : "Quality evaluation is pending";
-    content.append(el("p", [
+    content.append(el("p", (run.profile === "groq-dev50" ? [
+      count(run.paired_queries) + " Development queries", judged,
+    ] : [
       count(documents) + " documents", count(run.paired_queries) + " of " + count(run.query_count) + " queries",
       split, run.created_at.slice(0, 10), judged,
-    ].join(" · "), "measurement-note"));
+    ]).join(" · "), "measurement-note"));
   } else {
     content.append(el("p", "No compatible measurements are available for the current search data.", "measurement-note"));
   }
@@ -141,14 +145,14 @@ export function models({ documents, measurement: run, quality, search_settings: 
     el("p", "Judges grade relevance from 0 to 3. Grades 2 and 3 count as relevant for Precision and MRR.")));
   if (run) {
     const machine = run.machine || {};
-    const coverage = quality ? count(quality.labeled ?? quality.candidates) + " judged pairs, " + count(quality.pending ?? 0) + " pending" : "No matching judgment report";
     const exportLink = el("a", "Export measurements");
-    exportLink.href = "/api/v1/exports/reports/lab-" + run.split;
+    const reportName = "lab-" + (run.profile || run.split);
+    exportLink.href = "/api/v1/exports/reports/" + reportName;
     const body = [
       el("p", run.latency_note),
       el("p", [machine.platform, machine.cpu, machine.logical_cores ? machine.logical_cores + " logical CPU cores" : "", machine.python ? "Python " + machine.python : ""].filter(Boolean).join(" · ")),
       el("p", count(run.repeats) + (run.repeats === 1 ? " timed search" : " timed searches") +
-        " per method per query · candidate depth " + count(run.candidate_depth) + " · " + coverage),
+        " per method per query · candidate depth " + count(run.candidate_depth)),
       el("p", settings ? "Up to " + count(settings.max_results) + " results per search. TAAT for lexical scoring, BM25 k₁ " +
         settings.k1 + " and b " + settings.b + ", fusion constant " + settings.rrf_k + "." :
         "The lexical methods use TAAT and the same query set."),
@@ -160,9 +164,37 @@ export function models({ documents, measurement: run, quality, search_settings: 
       el("p", "Timing uses only queries completed by all five methods. The saved run records each excluded query and its reason."),
       exportLink,
     ];
+    if (full_development_timing) {
+      const full = el("a", "Export original 300-query Development timing report");
+      full.href = "/api/v1/exports/reports/lab-dev";
+      body.push(el("p", "The table measures the same 50 queries used by the top-ten Groq study."), full);
+    }
     content.append(detail("Measurement details", ...body));
+    if (quality) {
+      const exportQuality = el("a", "Export relevance evaluation");
+      exportQuality.href = "/api/v1/exports/reports/evaluation-" + reportName;
+      const judging = [el("p", count(quality.labeled ?? quality.candidates) + " judged pairs · " +
+        count(quality.pending ?? 0) + " pending" +
+        (quality.unresolved ? " · " + count(quality.unresolved) + " with insufficient evidence" : ""))];
+      if (Number.isFinite(quality.pooled_queries)) {
+        judging.push(el("p", count(quality.fully_judged_queries) + " of " + count(quality.pooled_queries) +
+          " queries with candidates are fully judged."));
+      }
+      if (quality.label_type === "AI-judged" && quality.prompt_version) {
+        judging.push(el("p", [quality.provider === "Groq" ? "Groq AI-assessed relevance" : "AI-assessed relevance",
+          quality.annotation_model || "Judge model is unset",
+          quality.prompt_version].join(" · ")));
+      }
+      if (quality.profile === "groq-dev50") {
+        judging.push(el("p", count(quality.pilot_judged) + " of " + count(quality.pilot_pairs) +
+          " pilot pairs judged · " + count(quality.empty_pool_queries) + " queries returned no pooled candidates."));
+      }
+      if (quality.reason) judging.push(el("p", quality.reason));
+      content.append(detail("Relevance evaluation details", ...judging, exportQuality));
+    }
   }
-  return { content, signature: JSON.stringify([documents, run?.run_id, quality?.pending, quality?.candidates,
+  return { content, signature: JSON.stringify([documents, run?.run_id, quality?.pending, quality?.labeled, quality?.candidates,
+    quality?.fully_judged_queries, quality?.unresolved, quality?.annotation_model, quality?.prompt_version, quality?.reason,
     rated ? quality.aggregates : null]) };
 }
 

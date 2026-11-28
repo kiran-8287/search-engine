@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TechSearch Development Review</title>
+  <style>
+    :root { color-scheme: light; --ink: #25252a; --muted: #565b67; --line: #d9dce2; --paper: #f7f7f5;
+      --link: #1848aa; --accent: #b73a25; font: 1rem/1.5 system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper); color: var(--ink); }
+    body:has(dialog[open]) { overflow: hidden; }
+    h1, h2, h3, h4, p { margin: 0 0 .5rem; }
+    h1 { font-size: 1.45rem; }
+    h2 { font-size: 1.25rem; overflow-wrap: anywhere; }
+    h3 { font-size: 1rem; }
+    header { border-top: 4px solid var(--accent); background: white; border-bottom: 1px solid var(--line); }
+    header > div, main { max-width: 80rem; margin: auto; padding: 1rem clamp(.9rem, 3vw, 1.7rem); }
+    .actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .7rem; }
+    button, textarea, input { font: inherit; }
+    button, textarea { color: inherit; background: white; border: 1px solid var(--line); border-radius: .25rem; padding: .35rem .6rem; }
+    button { cursor: pointer; }
+    button:disabled { cursor: default; opacity: .55; }
+    button:focus-visible, a:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid var(--link); outline-offset: 2px; }
+    a, .title { color: var(--link); }
+    .muted { color: var(--muted); }
+    .layout { display: grid; grid-template-columns: minmax(15rem, 23rem) minmax(0, 1fr); gap: 1.5rem; }
+    nav ul, #documents { list-style: none; margin: 0; padding: 0; }
+    nav ul { max-height: 72vh; overflow: auto; border-block: 1px solid var(--line); }
+    nav button { display: flex; justify-content: space-between; gap: .5rem; width: 100%; text-align: left; padding: .55rem;
+      background: none; border: 0; border-radius: 0; border-bottom: 1px solid var(--line); }
+    nav [aria-current="true"] { border-left: 3px solid var(--accent); background: white; font-weight: 650; }
+    nav button span:first-child { overflow-wrap: anywhere; }
+    .query-count { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
+    #documents li { padding: .7rem 0; border-top: 1px solid var(--line); }
+    .title { padding: 0; background: none; border: 0; text-align: left; font-weight: 650; overflow-wrap: anywhere; }
+    .title:hover { text-decoration: underline; }
+    .row-meta { color: var(--muted); font-size: .9rem; }
+    .excerpt { overflow-wrap: anywhere; margin-bottom: 0; }
+    #status { min-height: 1.5em; margin-top: .5rem; }
+    #import { max-width: min(100%, 18rem); }
+    dialog { width: min(62rem, calc(100% - 1.5rem)); max-height: calc(100dvh - 1.5rem); padding: 0;
+      border: 1px solid var(--line); border-radius: .35rem; color: var(--ink); }
+    dialog::backdrop { background: #1517219c; }
+    .dialog-body { padding: 1rem clamp(.8rem, 3vw, 1.4rem); }
+    .dialog-actions { display: flex; justify-content: space-between; align-items: start; gap: .7rem; }
+    .grading { background: var(--paper); border-block: 1px solid var(--line); padding: .75rem; margin: .8rem 0; }
+    .grading label { display: block; }
+    textarea { width: 100%; resize: vertical; }
+    [aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: white; }
+    .source { overflow-wrap: anywhere; }
+    .source h3, .source h4 { margin-top: .85rem; }
+    .source p, .source blockquote, .source li { white-space: pre-wrap; }
+    .source section { border-top: 1px solid var(--line); margin-top: 1rem; }
+    pre { margin: .35rem 0 .65rem; padding: .55rem .7rem; background: #eef0f3; overflow: auto; max-width: 100%; tab-size: 2; }
+    summary { cursor: pointer; color: var(--link); }
+    #preview-status, #draft-note { margin: .45rem 0 0; }
+    @media (max-width: 46rem) { .layout { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+      nav ul { max-height: 14rem; } }
+  </style>
+</head>
+<body>
+  <header><div>
+    <h1>TechSearch <span class="muted">/</span> Development review</h1>
+    <p id="study-progress" aria-live="polite"></p>
+    <div class="actions">
+      <button type="button" id="next">Next unjudged</button>
+      <button type="button" id="export">Export review JSON</button>
+      <label for="import">Import review JSON</label>
+      <input type="file" id="import" accept=".json,application/json">
+    </div>
+    <p id="status" role="status"></p>
+  </div></header>
+  <main class="layout">
+    <nav aria-labelledby="queries-title">
+      <h2 id="queries-title">Queries</h2>
+      <ul id="queries"></ul>
+    </nav>
+    <section aria-labelledby="query">
+      <h2 id="query"></h2>
+      <p id="intent"></p>
+      <p id="query-progress" class="muted"></p>
+      <ul id="documents"></ul>
+    </section>
+  </main>
+  <dialog id="preview" aria-labelledby="source-title">
+    <div class="dialog-body">
+      <div class="dialog-actions">
+        <h2 id="source-title" tabindex="-1"></h2>
+        <button type="button" id="close">Close</button>
+      </div>
+      <p id="source-meta" class="muted"></p>
+      <p><a id="original" target="_blank" rel="noopener noreferrer">Open original source</a></p>
+      <section class="grading" aria-labelledby="grade-title">
+        <h3 id="grade-title">Grade this document for the query</h3>
+        <p id="preview-query"></p>
+        <p class="muted">A grade saves immediately. Add your comment before choosing a grade.</p>
+        <label for="comment">Comment (optional)</label>
+        <textarea id="comment" rows="2" maxlength="2000"></textarea>
+        <div class="actions" id="grades">
+          <button type="button" data-grade="0">0 · Unrelated</button>
+          <button type="button" data-grade="1">1 · Slightly useful</button>
+          <button type="button" data-grade="2">2 · Useful but incomplete</button>
+          <button type="button" data-grade="3">3 · Direct and sufficient</button>
+          <button type="button" data-grade="unresolved">Cannot judge</button>
+        </div>
+        <p id="draft-note" class="muted">Cannot judge leaves this pair unresolved.</p>
+        <p id="preview-status" role="status"></p>
+        <button type="button" id="preview-next">Next unjudged</button>
+      </section>
+      <section class="source" id="source-content" aria-label="Complete indexed source"></section>
+      <details id="technical">
+        <summary>Technical details</summary>
+        <pre id="technical-content"></pre>
+      </details>
+    </div>
+  </dialog>
+  <script type="application/json" id="review-data">__REVIEW_DATA__</script>
+  <script>
+    const get = id => document.getElementById(id);
+    const data = JSON.parse(get("review-data").textContent);
+    const allPairs = data.queries.flatMap((entry, queryIndex) => entry.pairs.map(pair => ({ ...pair, queryIndex })));
+    const pairIds = new Set(allPairs.map(pair => pair.pair_id));
+    const pilotIds = new Set(data.legacy?.pairs || []);
+    const storageKey = "techsearch-study-review:" + data.batch_id;
+    const gradeButtons = [...get("grades").querySelectorAll("button")];
+    let saved = new Map();
+    let currentQuery = 0;
+    let currentPair = null;
+    let openingButton = null;
+    let rowStatuses = new Map();
+
+    function message(text, inPreview = false) {
+      get(inPreview ? "preview-status" : "status").textContent = text;
+    }
+
+    function pack() {
+      return { schema: data.schema, batch_id: data.batch_id, judging_protocol: data.judging_protocol,
+        grades: [...saved].map(([pair_id, judgment]) => ({ pair_id, ...judgment })) };
+    }
+
+    function readGrades(value) {
+      const pilot = value?.schema === 1 && data.legacy && value.batch_id === data.legacy.batch_id;
+      const study = value?.schema === data.schema && value.batch_id === data.batch_id;
+      if ((!pilot && !study) || value.judging_protocol !== data.judging_protocol) {
+        throw new Error("This file belongs to another review batch.");
+      }
+      let rows = value.grades;
+      if (pilot) {
+        if (!rows || typeof rows !== "object" || Array.isArray(rows)) throw new Error("Invalid pilot review.");
+        rows = Object.entries(rows).map(([id, row]) => {
+          if (!row || Object.keys(row).length !== 2 || !Object.hasOwn(row, "grade") || !Object.hasOwn(row, "comment")) {
+            throw new Error("Invalid pilot judgment.");
+          }
+          return { ...row, pair_id: id };
+        });
+      }
+      if (!Array.isArray(rows)) throw new Error("Missing review judgments.");
+      const valid = new Map();
+      const allowed = pilot ? pilotIds : pairIds;
+      for (const row of rows) {
+        if (!row || Object.keys(row).length !== 3 || !allowed.has(row.pair_id) || valid.has(row.pair_id) ||
+          ![0, 1, 2, 3, null].includes(row.grade) || typeof row.comment !== "string" ||
+          [...row.comment].length > 2000) {
+          throw new Error("Invalid or duplicate query–document judgment.");
+        }
+        valid.set(row.pair_id, { grade: row.grade, comment: row.comment });
+      }
+      return valid;
+    }
+
+    function persist() {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(pack()));
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    function numeric(id) {
+      return Number.isInteger(saved.get(id)?.grade);
+    }
+
+    function counts(pairs) {
+      const judged = pairs.filter(pair => numeric(pair.pair_id)).length;
+      const unresolved = pairs.filter(pair => saved.get(pair.pair_id)?.grade === null).length;
+      return judged + " of " + pairs.length + " judged" + (unresolved ? " · " + unresolved + " cannot judge" : "");
+    }
+
+    function sourceName(doc) {
+      return doc.source === "mdn" ? "MDN Web Docs" : "Stack Overflow";
+    }
+
+    function statusLabel(id) {
+      if (numeric(id)) return "Grade " + saved.get(id).grade;
+      return saved.has(id) ? "Cannot judge" : "Unjudged";
+    }
+
+    function progress() {
+      get("study-progress").textContent = counts(allPairs) + " across " + data.queries.length + " queries";
+      get("query-progress").textContent = counts(data.queries[currentQuery].pairs);
+      get("export").disabled = saved.size === 0;
+      get("next").disabled = get("preview-next").disabled = allPairs.every(pair => numeric(pair.pair_id));
+      data.queries.forEach((entry, i) => {
+        const judged = entry.pairs.filter(pair => numeric(pair.pair_id)).length;
+        const item = get("queries").children[i].firstElementChild;
+        item.setAttribute("aria-current", String(i === currentQuery));
+        item.lastElementChild.textContent = judged + "/" + entry.pairs.length;
+        item.setAttribute("aria-label", entry.query.original_query + " · " + counts(entry.pairs));
+      });
+      for (const [id, element] of rowStatuses) element.textContent = statusLabel(id);
+      if (currentPair) {
+        const choice = saved.get(currentPair.pair_id)?.grade;
+        for (const button of gradeButtons) {
+          button.setAttribute("aria-pressed", String(choice !== undefined &&
+            button.dataset.grade === (choice === null ? "unresolved" : String(choice))));
+        }
+      }
+    }
+
+    function node(tag, text, className = "") {
+      const element = document.createElement(tag);
+      element.textContent = text;
+      if (className) element.className = className;
+      return element;
+    }
+
+    function renderQuery(index) {
+      currentQuery = index;
+      const entry = data.queries[index];
+      get("query").textContent = entry.query.original_query;
+      get("intent").textContent = entry.query.information_need;
+      rowStatuses = new Map();
+      get("documents").replaceChildren(...entry.pairs.map(pair => {
+        const doc = data.documents[pair.document];
+        const row = document.createElement("li");
+        const title = node("button", doc.title, "title");
+        title.type = "button";
+        title.dataset.pair = pair.pair_id;
+        title.addEventListener("click", () => openPair({ ...pair, queryIndex: index }, title));
+        const state = node("span", "");
+        rowStatuses.set(pair.pair_id, state);
+        const meta = node("p", sourceName(doc) + " · ", "row-meta");
+        meta.append(state);
+        row.append(title, meta, node("p", pair.excerpt, "excerpt"));
+        return row;
+      }));
+      progress();
+    }
+
+    function sourceBlocks(rows, into) {
+      let list = null;
+      for (const row of rows) {
+        if (row.kind === "list_item") {
+          if (!list) { list = document.createElement("ul"); into.append(list); }
+          list.append(node("li", row.text));
+          continue;
+        }
+        list = null;
+        if (row.kind === "code" || row.kind === "table") {
+          const block = document.createElement("pre");
+          block.append(node("code", row.text));
+          into.append(block);
+        } else {
+          into.append(node(row.kind === "heading" ? "h4" : row.kind === "blockquote" ? "blockquote" : "p", row.text));
+        }
+      }
+    }
+
+    function completeSource(doc) {
+      const content = get("source-content");
+      content.replaceChildren();
+      if (doc.source !== "stackoverflow") {
+        sourceBlocks(doc.sections, content);
+        return;
+      }
+      const question = document.createElement("section");
+      question.append(node("h3", "Question"));
+      sourceBlocks(doc.sections.filter(row => row.answer_id === null), question);
+      content.append(question);
+      const answerIds = [...new Set(doc.sections.filter(row => row.answer_id !== null).map(row => row.answer_id))];
+      answerIds.forEach((id, i) => {
+        const section = document.createElement("section");
+        const answer = doc.answers.find(item => item.id === id);
+        section.append(node("h3", "Answer " + (i + 1) + (answer?.accepted ? " · Accepted answer" : "")));
+        const attribution = [answer?.author, answer?.license].filter(Boolean).join(" · ");
+        if (attribution) section.append(node("p", attribution, "muted"));
+        sourceBlocks(doc.sections.filter(row => row.answer_id === id), section);
+        content.append(section);
+      });
+      if (!answerIds.length) content.append(node("p", "No answer saved for this question.", "muted"));
+    }
+
+    function openPair(pair, button) {
+      currentPair = pair;
+      openingButton = button;
+      const doc = data.documents[pair.document];
+      get("source-title").textContent = doc.title;
+      get("source-meta").textContent = [sourceName(doc), doc.author, doc.license, doc.tags.join(", ")].filter(Boolean).join(" · ");
+      get("preview-query").textContent = data.queries[pair.queryIndex].query.original_query;
+      const original = get("original");
+      original.hidden = !doc.url;
+      if (doc.url) original.href = doc.url; else original.removeAttribute("href");
+      get("comment").value = saved.get(pair.pair_id)?.comment || "";
+      get("technical").open = false;
+      get("technical-content").textContent = [doc.path || pair.document, ...doc.sections.map(row =>
+        [row.ordinal, row.segment_id, row.heading_path.join(" / ")].filter(value => value != null && value !== "").join(" · "))].join("\n");
+      completeSource(doc);
+      message(statusLabel(pair.pair_id), true);
+      if (!get("preview").open) get("preview").showModal();
+      get("preview").scrollTop = 0;
+      get("source-title").focus();
+      progress();
+    }
+
+    function nextUnjudged() {
+      const start = currentPair ? allPairs.findIndex(pair => pair.pair_id === currentPair.pair_id)
+        : allPairs.findIndex(pair => pair.queryIndex === currentQuery) - 1;
+      const next = Array.from({ length: allPairs.length }, (_, i) => allPairs[(start + i + 1) % allPairs.length])
+        .find(pair => !numeric(pair.pair_id));
+      if (!next) return;
+      renderQuery(next.queryIndex);
+      const button = get("documents").querySelector(`[data-pair="${next.pair_id}"]`);
+      openPair(next, button);
+    }
+
+    try {
+      const prior = localStorage.getItem(storageKey);
+      if (prior) saved = readGrades(JSON.parse(prior));
+    } catch {
+      message("Browser storage could not be read. You can import a review file.");
+    }
+    data.queries.forEach((entry, i) => {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.append(node("span", entry.query.original_query), node("span", "", "query-count"));
+      button.addEventListener("click", () => renderQuery(i));
+      item.append(button);
+      get("queries").append(item);
+    });
+    renderQuery(0);
+    get("next").addEventListener("click", nextUnjudged);
+    get("preview-next").addEventListener("click", nextUnjudged);
+    get("close").addEventListener("click", () => get("preview").close());
+    get("preview").addEventListener("close", () => {
+      currentPair = null;
+      openingButton?.focus();
+    });
+    for (const button of gradeButtons) {
+      button.addEventListener("click", () => {
+        const grade = button.dataset.grade === "unresolved" ? null : Number(button.dataset.grade);
+        saved.set(currentPair.pair_id, { grade, comment: get("comment").value });
+        const durable = persist();
+        progress();
+        message(statusLabel(currentPair.pair_id) +
+          (durable ? " saved in this browser." : " saved for this page. Export before closing."), true);
+      });
+    }
+    get("export").addEventListener("click", () => {
+      const url = URL.createObjectURL(new Blob([JSON.stringify(pack(), null, 2)], { type: "application/json" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "techsearch-study-review.json";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      message("Saved judgments exported.");
+    });
+    get("import").addEventListener("change", async event => {
+      const file = event.target.files[0];
+      if (!file) return;
+      try {
+        const incoming = readGrades(JSON.parse(await file.text()));
+        for (const [id, judgment] of incoming) {
+          const prior = saved.get(id);
+          if (prior && (prior.grade !== judgment.grade || prior.comment !== judgment.comment)) {
+            throw new Error("The file conflicts with a saved judgment. Your current judgments were kept.");
+          }
+        }
+        const priorSize = saved.size;
+        for (const [id, judgment] of incoming) saved.set(id, judgment);
+        const durable = persist();
+        progress();
+        message((saved.size - priorSize) + " new judgments imported." +
+          (durable ? "" : " Export before closing this page."));
+      } catch (error) {
+        message(error instanceof SyntaxError ? "This file is not valid JSON." : error.message);
+      } finally {
+        event.target.value = "";
+      }
+    });
+  </script>
+</body>
+</html>

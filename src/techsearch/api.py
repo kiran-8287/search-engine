@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .config import load_settings
 from .dense import DenseUnavailable
-from .evaluation import lab_settings, matches_lab_run
+from .evaluation import GROQ_PROFILE, GROQ_PROMPT, GROQ_RUN, lab_settings, matches_groq_report, matches_lab_run
 from .feedback import SnapshotMissing, search_id
 from .io import WorkloadError, digest, read_json
 from .pipeline import RELEASE_ID, ReleaseUnavailable, open_release, status
@@ -27,7 +27,7 @@ SESSION = re.compile("[a-f0-9]{32}")
 REPORTS = {"compression", "taat-daat", "graph", "latent", "retrieval", "benchmark-dev", "benchmark-test",
            "evaluation-dev", "evaluation-test", "ablations-dev", "ablations-test",
            "evaluation-ablations-dev", "evaluation-ablations-test",
-           "lab-dev", "lab-test", "evaluation-lab-dev", "evaluation-lab-test"}
+           "lab-dev", "lab-test", "evaluation-lab-dev", "evaluation-lab-test", GROQ_RUN, "evaluation-" + GROQ_RUN}
 
 
 class SearchRequest(BaseModel):
@@ -286,6 +286,25 @@ def create_app(settings=None):
                 return result
         except (OSError, ValueError, KeyError, TypeError):
             return result
+        try:
+            subset = saved_report(GROQ_RUN, active.id)
+            profile = read_json(settings.path("data") / "evaluation" / f"{GROQ_PROFILE}.json") if subset else None
+            full = saved_report("lab-dev", active.id) if subset else None
+            if (subset and full and full["report"].get("run_id") == profile.get("source_run_id")
+                    and matches_groq_report(settings, subset["report"], profile, active.id, protocol)):
+                result["measurement"] = subset["report"]
+                result["full_development_timing"] = True
+                graded = saved_report("evaluation-" + GROQ_RUN, active.id)
+                if graded:
+                    quality = graded["report"]
+                    if (quality.get("profile") == GROQ_PROFILE and quality.get("protocol") == profile["protocol"]
+                            and quality.get("prompt_version") == GROQ_PROMPT
+                            and quality.get("measurement_run_id") == subset["report"]["run_id"]):
+                        result["quality"] = quality
+                return result
+        except (HTTPException, OSError, ValueError, KeyError, AttributeError, TypeError):
+            if result["measurement"]:
+                return result
         for split in ("test", "dev"):
             try:
                 saved = saved_report(f"lab-{split}", active.id)
@@ -307,7 +326,9 @@ def create_app(settings=None):
                 graded = None
             if graded:
                 quality = graded["report"]
-                if quality.get("measurement_run_id") == run["run_id"] and quality.get("protocol") == protocol:
+                prompt = settings.evaluation["annotation"]["prompt_version"]
+                if (quality.get("measurement_run_id") == run["run_id"] and quality.get("protocol") == protocol
+                        and quality.get("prompt_version", prompt) == prompt):
                     result["quality"] = quality
             break
         return result

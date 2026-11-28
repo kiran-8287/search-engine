@@ -1,6 +1,6 @@
 # TechSearch project facts
 
-The figures below describe active release `250a15ecd349951d6c69364c`, frozen corpus `1a1a58867f0b20556402c331`, unless a different release is named. **Implemented** means the code exists. **Verified** names a test, saved measurement, file check, or observed behavior. **Pending** names a check or result that is still missing. The [source map](SOURCE_MAP.md) lists the code and workspace evidence.
+The figures below describe the earlier release `250a15ecd349951d6c69364c` and frozen corpus `1a1a58867f0b20556402c331`, unless a different release is named. In these archived notes, “active” means active when the evidence was captured. Use the [course report](../PROJECT_REPORT.md) for the current corpus and measurements. The [historical source map](SOURCE_MAP.md) lists the code and evidence used at the time.
 
 ## 1. Project purpose
 

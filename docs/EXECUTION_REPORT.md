@@ -1,8 +1,10 @@
 # Execution report — 2026-11-22
 
-## Active release on Windows
+This report records the 22 November setup and verification. See the [course report](PROJECT_REPORT.md) for the final corpus and Development results.
 
-- `artifacts/releases/active.json` points to `250a15ecd349951d6c69364c`. Its manifest records canonical snapshot `1a1a58867f0b20556402c331`, 15,345 documents, and 197,628 passages. The saved vector array has shape `(197628, 384)`. The dense build log ends with this release ID and the dense flag set, and no index build was running when checked on 2026-11-22.
+## Windows release checked on 22 November
+
+- At the time, `artifacts/releases/active.json` pointed to `250a15ecd349951d6c69364c`. Its retained manifest records canonical snapshot `1a1a58867f0b20556402c331`, 15,345 documents, and 197,628 passages. The saved vector array has shape `(197628, 384)`. The dense build log ends with this release ID and the dense flag set, and no index build was running when checked on 2026-11-22.
 - The release contains 12,597 admitted MDN pages from pinned revision `df622a2a1c1e9626976cb3c091622d35e799b0cf` and 2,748 legacy Stack Overflow threads. The MDN acquisition saved 12,650 structured pages before corpus exclusions, with zero parse failures. The later 5,000-question Stack Overflow export is recorded separately in `data/manifests/collection-stackoverflow.json`.
 - Standard and deep validation passed on the active release. The pinned MiniLM encoder is `1110a243fdf4706b3f48f1d95db1a4f5529b4d41`. Saved Chromium 159 evidence covers actual Search results, desktop and mobile previews, source filtering and IR Lab. See the [fresh deep validation output](../artifacts/execution/validate-active-dense-windows.json), [live browser evidence](../artifacts/execution/ui-redesign/live-browser.json), and [cleanup report](CLEANUP_REPORT.md).
 
@@ -20,7 +22,7 @@ This report records actual execution in the repository on Linux x86_64/glibc 2.2
 - Canonical snapshot: `data/processed/b1bddfda4e413b0e8d06ea0a/`, 7,691 parents: 4,943 MDN and 2,748 Stack Overflow. Canonical artifacts total 44,019,813 bytes.
 - Lexical release: `artifacts/releases/6f86fc58d97fad8a0c0ec387/`, 82,965 terms, 1,398,540 document-term postings, 4,206,671 positional occurrences. Build time 121.825 seconds; release artifacts 243,305,087 bytes.
 - Deep lexical validation passed, including source positions, forward TF/lengths/norms, and all three posting decoders. All 7,691 parents independently resolve to original input-array offsets with matching stable ID, URL and segment text.
-- The earlier Linux dense release `0bc9d95b4db6f1357b62a591` completed with 42,374 passages on those 7,691 documents, according to the work log. Its manifest and dense benchmark outputs are absent from the current workspace. The active Windows dense release uses the larger refreshed-MDN snapshot.
+- The earlier Linux dense release `0bc9d95b4db6f1357b62a591` completed with 42,374 passages on those 7,691 documents, according to the work log. Its manifest and dense benchmark outputs are absent from the current workspace. The Windows dense release checked on 22 November used the larger refreshed-MDN snapshot.
 
 ## Historical lexical experiments
 

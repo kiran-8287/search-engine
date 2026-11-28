@@ -55,6 +55,8 @@ python scripts/start.py --host localhost --port 8000
 
 The first model download and index build can take time. Preprocessing and indexing are part of the initial setup. Run them again when you change the data.
 
+If you received the prepared course demo ZIP, use the [demo run sheet](docs/DEMO_RUN_SHEET.md). It has its own data and indexes, ready to serve after dependencies are installed.
+
 Open the app in your browser.
 
 - [Search](http://localhost:8000/)
@@ -95,7 +97,7 @@ The collectors save `data/raw/mdn_documents.json` and `data/raw/stackoverflow_do
 
 - Filter results by source or topic and open **Preview** to see an excerpt.
 - Compare keyword, semantic, and hybrid search in IR Lab.
-- Read the [IR Lab guide](docs/IR_LAB.md), [data dictionary](docs/DATA_DICTIONARY.md), or [demo run sheet](docs/DEMO_RUN_SHEET.md).
+- Read the [course report](docs/PROJECT_REPORT.md), [IR Lab guide](docs/IR_LAB.md), or [data dictionary](docs/DATA_DICTIONARY.md).
 - For more options, see [detailed setup and troubleshooting](docs/PROJECT_CONTEXT.md#detailed-setup). Find source licenses in [Attribution](docs/ATTRIBUTION.md).
 
 To run unit and integration tests, use the project environment.

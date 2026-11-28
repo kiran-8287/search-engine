@@ -11,22 +11,24 @@ import yaml
 from dotenv import dotenv_values
 
 from .dense import load_encoder, model_path
-from .io import dumps, file_hash, now
+from .evaluation import GROQ_PROFILE, GROQ_PROMPT, GROQ_RUN, lab_settings, matches_groq_report, matches_lab_run
+from .io import digest, dumps, file_hash, now, read_json
 from .pipeline import RELEASE_ID
 
 PUBLIC_FILES = (
     ".gitignore", "README.md", "pyproject.toml", "collect_mdn.py", "collect_stackoverflow.py",
-    "config/evaluation-queries.tsv",
+    "config/evaluation-queries.tsv", "config/groq-dev50-intents.json",
     "docs/ATTRIBUTION.md", "docs/CLEANUP_REPORT.md", "docs/CODE_MAP.md", "docs/DATA_DICTIONARY.md",
     "docs/DECISIONS.md", "docs/DEMO_RUN_SHEET.md", "docs/EXECUTION_REPORT.md", "docs/IMPLEMENTATION_STATUS.md",
     "docs/IR_LAB.md", "docs/MASTER_ARCHITECTURE.md", "docs/PROJECT_CONTEXT.md", "docs/SIMPLIFICATION_REPORT.md",
-    "frontend/index.html", "frontend/lab.html", "frontend/assets/favicon.ico", "frontend/assets/css/site.css",
+    "docs/PROJECT_REPORT.md", "docs/GROQ_STUDY.md", "docs/GROQ_V2.md", "docs/GROQ_V3.md",
+    "frontend/index.html", "frontend/lab.html", "frontend/review.html", "frontend/assets/favicon.ico", "frontend/assets/css/site.css",
     "frontend/assets/js/shared.js", "frontend/assets/js/search.js", "frontend/assets/js/lab.js",
     "frontend/assets/js/lab-reports.js",
     "scripts/bootstrap.py", "scripts/package_demo.py", "scripts/start.py", "scripts/verify_app.py",
     *(f"src/techsearch/{name}.py" for name in (
         "__init__", "__main__", "api", "cli", "collection", "compression", "config", "corpus", "dense", "evaluation",
-        "experiments", "feedback", "graph", "indexing", "io", "packaging", "pipeline", "preprocessing", "query",
+        "experiments", "feedback", "graph", "human_review", "indexing", "io", "judging", "judging_v3", "packaging", "pipeline", "preprocessing", "query",
         "repository", "retrieval", "service",
     )),
 )
@@ -58,12 +60,13 @@ def demo_configs(settings):
 
 def credential_values(root):
     # Use configured values only to reject accidental copies in inputs.
-    values = {os.getenv(key) for key in CREDENTIAL_NAMES}
+    names = (*CREDENTIAL_NAMES, "GROQ_API_KEY")
+    values = {os.getenv(key) for key in names}
     for name in (".env", ".env.example"):
         local = root / name
         if local.is_file():
             fields = dotenv_values(local, interpolate=False)
-            values.update(fields.get(key) for key in CREDENTIAL_NAMES)
+            values.update(fields.get(key) for key in names)
     return tuple(value.encode("utf-8") for value in values if value)
 
 
@@ -87,7 +90,87 @@ def archive_file(archive, name, source, credentials):
             packed.write(chunk)
 
 
-def package_demo(settings, release, output=None):
+def demo_reports(settings, release):
+    """Copy only current report summaries and their matching frozen catalog."""
+    directory = settings.path("artifacts") / "reports" / release.id
+    entries = {}
+
+    def load(name):
+        path = directory / f"{name}.json"
+        if not path.is_file():
+            return None
+        if path.resolve() != path.absolute():
+            raise ValueError("Demo report inputs must use direct paths.")
+        saved = read_json(path)
+        report = saved.get("report")
+        if (saved.get("release_id") != release.id or saved.get("name") != name
+                or not isinstance(report, dict) or report.get("release_id", release.id) != release.id):
+            raise ValueError(f"Demo report {name} does not match the active release.")
+        return report
+
+    def include(name, report):
+        entries[f"artifacts/reports/{release.id}/{name}.json"] = {
+            "name": name, "release_id": release.id, "report": report,
+        }
+
+    def include_quality(name, report):
+        public_fields = ("split", "protocol", "measurement_run_id", "status", "pending", "labeled", "reason",
+                         "aggregates", "sample_counts", "authority_paired", "candidates", "label_type",
+                         "annotation_model", "reported_models", "prompt_version", "total_pairs", "fully_judged_queries",
+                         "pooled_queries", "compared_queries", "unresolved", "provider_requests",
+                         "profile", "provider", "source_run_id", "pool_depth", "candidate_entries", "empty_pool_queries",
+                         "pilot_pairs", "pilot_judged", "pilot_review", "audited_pairs", "audit_disagreements", "generation_budget")
+        include(name, {key: report[key] for key in public_fields if key in report})
+
+    fingerprint = lab_settings(settings)
+    for name in ("compression", "taat-daat", "retrieval", "latent"):
+        report = load(name)
+        if report and report.get("lab_settings") == fingerprint:
+            include(name, report)
+
+    path = settings.path("data") / "evaluation" / "frozen.json"
+    if path.is_file():
+        if path.resolve() != path.absolute():
+            raise ValueError("The frozen query catalog must use a direct path.")
+        catalog = read_json(path)
+        groups = catalog["groups"]
+        protocol = catalog["group_fingerprint"]
+        if protocol != digest(groups):
+            raise ValueError("The demo query catalog does not match its fingerprint.")
+        for split in ("dev", "test"):
+            name = f"lab-{split}"
+            run = load(name)
+            if not run or not matches_lab_run(settings, run, release.id, split, protocol):
+                continue
+            include(name, run)
+            entries["data/evaluation/frozen.json"] = catalog
+            name = f"evaluation-lab-{split}"
+            quality = load(name)
+            if (quality and quality.get("measurement_run_id") == run.get("run_id")
+                    and quality.get("protocol") == protocol and quality.get("split") == split
+                    and quality.get("prompt_version", settings.evaluation["annotation"]["prompt_version"])
+                    == settings.evaluation["annotation"]["prompt_version"]):
+                include_quality(name, quality)
+        profile_path = path.with_name(f"{GROQ_PROFILE}.json")
+        subset = load(GROQ_RUN)
+        full = entries.get(f"artifacts/reports/{release.id}/lab-dev.json")
+        if full and subset and profile_path.is_file():
+            if profile_path.resolve() != profile_path.absolute():
+                raise ValueError("The study profile must use a direct path.")
+            profile = read_json(profile_path)
+            if (matches_groq_report(settings, subset, profile, release.id, protocol)
+                    and profile["source_run_id"] == full["report"]["run_id"]):
+                include(GROQ_RUN, subset)
+                entries[f"data/evaluation/{GROQ_PROFILE}.json"] = profile
+                quality = load("evaluation-" + GROQ_RUN)
+                if (quality and quality.get("profile") == GROQ_PROFILE and quality.get("protocol") == profile["protocol"]
+                        and quality.get("prompt_version") == GROQ_PROMPT
+                        and quality.get("measurement_run_id") == subset.get("run_id")):
+                    include_quality("evaluation-" + GROQ_RUN, quality)
+    return entries
+
+
+def package_demo(settings, release, output=None, *, with_lab_reports=False):
     root = settings.root
     if not RELEASE_ID.fullmatch(release.id):
         raise ValueError("Invalid demo release identifier.")
@@ -126,6 +209,8 @@ def package_demo(settings, release, output=None):
     }
     if model:
         manifests["artifacts/models/encoder/active.json"] = model
+    if with_lab_reports:
+        manifests.update(demo_reports(settings, release))
     generated = {name: (dumps(value) + "\n").encode("utf-8") for name, value in manifests.items()}
     generated.update({name: yaml.safe_dump(value, sort_keys=False).encode("utf-8")
                       for name, value in demo_configs(settings).items()})

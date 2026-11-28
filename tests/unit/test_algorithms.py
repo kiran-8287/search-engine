@@ -12,6 +12,7 @@ from techsearch.indexing import Index
 from techsearch.preprocessing import analyze
 from techsearch.query import FIELD_ID, Matcher, Operator, QueryError, edit_distance, lex, parse
 from techsearch.retrieval import fuse
+from techsearch.service import auto_mode
 
 
 def test_code_aware_analysis_and_offsets():
@@ -21,6 +22,21 @@ def test_code_aware_analysis_and_offsets():
     assert tokens[0].aliases == ("all", "promise")
     assert tokens[1].aliases == ("query", "selector")
     assert text[tokens[-1].start:tokens[-1].end] == "<a>"
+
+
+@pytest.mark.parametrize(("query", "mode"), [
+    ("wait for several JavaScript promises to finish", "hybrid"),
+    ("how do TypeScript promises settle", "hybrid"),
+    ("Promise.all", "keyword"),
+    ("document.querySelector examples", "keyword"),
+    ("querySelectorAll()", "keyword"),
+    ("x === y", "keyword"),
+    ('"event bubbling"', "phrase"),
+    ("source:mdn title:Promise.all", "field"),
+    ("promise AND (resolve OR reject) AND NOT xhr", "boolean"),
+])
+def test_auto_distinguishes_prose_from_exact_syntax(query, mode, settings):
+    assert auto_mode(query, settings.search)[0] == mode
 
 
 def test_cluster_labels_keep_informative_terms_in_weight_order():

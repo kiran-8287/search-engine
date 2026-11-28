@@ -6,7 +6,7 @@ These links point to the TechSearch workspace used for this evidence package. Th
 
 | Evidence | Workspace reference | What it establishes |
 | --- | --- | --- |
-| Active pointer and release | [active.json](../../artifacts/releases/active.json) · [manifest.json](../../artifacts/releases/250a15ecd349951d6c69364c/manifest.json) · [index.json](../../artifacts/releases/250a15ecd349951d6c69364c/index.json) | Active ID, frozen source inputs, counts, component versions, graph and codec stats, pinned model and artifact hashes. |
+| Release used for this evidence | [manifest.json](../../artifacts/releases/250a15ecd349951d6c69364c/manifest.json) · [index.json](../../artifacts/releases/250a15ecd349951d6c69364c/index.json) | Then-active ID, frozen source inputs, counts, component versions, graph and codec stats, pinned model and artifact hashes. |
 | Real release validation | [Fresh deep validation output](../../artifacts/execution/validate-active-dense-windows.json) · [Completed build log](../../artifacts/execution/pipeline-refreshed-mdn-dense-windows.log) | Completed dense build and validated real payloads. |
 | Fixture tests | [Latest collector and full-suite results](../IMPLEMENTATION_STATUS.md#collector-repair-verification-2026-11-22) · [Test fixture setup](../../tests/conftest.py) · [Algorithms](../../tests/unit/test_algorithms.py) · [Integration](../../tests/integration/test_release.py) · [Chromium fixtures](../../tests/browser/test_frontend.py) | Test examples use isolated or mocked inputs. |
 | Live and offline running app | [Earlier real browser evidence](../../artifacts/execution/ui-redesign/live-browser.json) · [Offline archive check](../../artifacts/execution/offline-demo-250a15ecd349951d6c69364c.json) · [Current screenshot guide](SCREENSHOT_GUIDE.md) | Earlier live checks, isolated Windows offline API checks on an extracted bundle, and this package's current frontend observations. |
@@ -34,7 +34,7 @@ These links point to the TechSearch workspace used for this evidence package. Th
 - Phrase matching in `Matcher.match` requires posting positions marked as original and phrase-safe. `indexing.analyze_parent` clears the phrase-safe flag on legacy-flat text, even when the term came from a primary token. This matters for the active Stack Overflow input and qualifies a short architecture description about adjacent original positions.
 - The architecture describes the available report endpoints. The running Lab limits saved experiment panels to the active release. Compression and graph can display manifest build data. A comparison may run live even when the corresponding saved report is absent. Historical reports remain associated with their original releases.
 - Snapshot expiration is seven days, and `Runtime.store` also prunes beyond 100 snapshots per session. The extra per-session cap is part of current code.
-- Earlier plans and time-stamped work-log lines mention 42,374 passages. That number belongs to the completed legacy Linux build. It is distinct from the active release's 197,628 passages. The [execution report](../EXECUTION_REPORT.md#legacy-corpus-releases) records the build history.
+- Earlier plans and time-stamped work-log lines mention 42,374 passages. That number belongs to the completed legacy Linux build. The Windows release captured here had 197,628 passages. The [execution report](../EXECUTION_REPORT.md#legacy-corpus-releases) records the build history.
 
 ## Uncertainties and limits of the evidence
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -11,7 +12,7 @@ from techsearch.io import now, write_json
 
 CASES = {
     "keyword": "Promise.all",
-    "boolean": "source:mdn AND title:CSS",
+    "boolean": "source:mdn AND (title:CSS OR title:HTML) AND NOT title:SVG",
     "phrase": '"Promise.all"',
     "prefix": "querySel*",
     "fuzzy": "promsie.all",
@@ -41,8 +42,19 @@ def verify(base, output, executable):
             result = search(query, mode=mode)
             assert result["results"] and not result["warnings"], (mode, result)
             assert result["mode"] == mode
+            if mode == "fuzzy":
+                expansion = next(item for item in result["trace"]["expansions"]
+                                 if item["kind"] == "fuzzy" and item["from"] == query.casefold())
+                assert any(term == "promise.all" and weight > 0 for term, weight in expansion["terms"])
+                corrected = next(hit for hit in result["results"] if "promise.all" in hit["evidence"]["matched_terms"])
+                assert any(part["match"] and part["text"].casefold() == "promise.all" for part in corrected["snippet"])
             report["modes"][mode] = {"query": query, "total": result["total"], "timing_ms": result["timing_ms"],
                                      "top_id": result["results"][0]["id"], "trace": result["trace"]}
+        existing = search("Promise.all", mode="fuzzy")
+        assert existing["results"] and not existing["trace"]["expansions"]
+        literal = next(hit for hit in existing["results"] if "promise.all" in hit["evidence"]["matched_terms"])
+        assert any(part["match"] and part["text"].casefold() == "promise.all" for part in literal["snippet"])
+        report["checks"]["fuzzy_evidence"] = {"corrected": "promsie.all", "literal": "Promise.all", "matched_term": "promise.all"}
         for ranker in ("bm25", "tfidf"):
             a = search("CSS grid", mode="keyword", ranker=ranker, strategy="taat")
             b = search("CSS grid", mode="keyword", ranker=ranker, strategy="daat")
@@ -61,8 +73,11 @@ def verify(base, output, executable):
             # public Auto must route them to the Boolean branch.
             constrained = search('source:mdn "Promise.all"', mode=mode)
             assert constrained["results"] and all(hit["source"] == "mdn" for hit in constrained["results"])
-        auto = search("run asynchronous tasks in parallel")
-        assert "dense" in auto["trace"]["branches"] and not auto["trace"]["fallback"]
+        auto = search("wait for several JavaScript promises to finish")
+        assert auto["mode"] == "hybrid" and "dense" in auto["trace"]["branches"] and not auto["trace"]["fallback"]
+        for identifier in ("Promise.all", "querySelectorAll"):
+            auto = search(identifier)
+            assert auto["mode"] == "keyword" and auto["results"]
         report["checks"]["constraints_and_auto"] = "passed"
         first = search("CSS", mode="keyword", page_size=4)
         second = get(f'/search/{first["search_id"]}', params={"page": 2, "size": 4})
@@ -117,9 +132,20 @@ def verify(base, output, executable):
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True, **({"executable_path": executable} if executable else {}))
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        external = []
+
+        def only_app_requests(route):
+            if route.request.url.startswith(base + "/"):
+                route.continue_()
+            else:
+                external.append(urlsplit(route.request.url).hostname)
+                route.abort()
+
+        page.route("**/*", only_app_requests)
         errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.goto(base)
+        page.screenshot(path=str(output / "search-home.png"), full_page=True)
         page.keyboard.press("/")
         field = page.get_by_label("Search the corpus", exact=True)
         expect(field).to_be_focused()
@@ -155,6 +181,13 @@ def verify(base, output, executable):
             if lab["quality"] and lab["quality"].get("status") in {"blocked", "partial"}:
                 expect(page.get_by_text("Quality evaluation is pending", exact=False)).to_be_visible()
                 expect(page.get_by_text("Ranking quality by method", exact=False)).to_have_count(0)
+        if lab["quality"]:
+            page.get_by_text("Relevance evaluation details", exact=True).click()
+            quality_link = page.get_by_role("link", name="Export relevance evaluation")
+            exported = page.request.get(base + quality_link.get_attribute("href"))
+            assert exported.ok and exported.json()["report"] == lab["quality"]
+            report["quality_export"] = {"split": lab["quality"]["split"], "pending": lab["quality"].get("pending"),
+                                        "judged": lab["quality"].get("labeled"), "prompt": lab["quality"].get("prompt_version")}
         page.screenshot(path=str(output / "lab-model-comparison.png"), full_page=True, animations="disabled")
         nav.get_by_role("link", name="Try a query").click()
         page.locator("#method-a-method").select_option("dense")
@@ -202,7 +235,9 @@ def verify(base, output, executable):
         page.screenshot(path=str(output / "lab-mobile.png"), animations="disabled")
         report["checks"]["lab_navigation_and_comparisons"] = "passed"
         assert not errors, errors
+        assert not external, external
         report["browser"] = {"engine": browser.version, "modes": list(CASES), "javascript_errors": errors,
+                              "blocked_external_requests": external,
                               "screenshots": sorted(path.name for path in output.glob("*.png"))}
         browser.close()
     write_json(output / "app-verification.json", report)

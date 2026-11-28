@@ -11,7 +11,8 @@ from .preprocessing import analyze
 MODES = ("keyword", "boolean", "phrase", "prefix", "fuzzy", "semantic", "hybrid", "field")
 FIELD = re.compile(r"([A-Za-z]+):")
 TAG = re.compile(r"[\w.+#-]{1,45}\Z")
-IDENTIFIER = re.compile(r"^[\w$]+\.[\w$.]+$|[a-z][A-Z]")
+DOTTED_IDENTIFIER = re.compile(r"[\w$]+\.[\w$.]+")
+CAMEL_IDENTIFIER = re.compile(r"[a-z][A-Z]")
 WORD = re.compile(r"^[\w.-]+$")
 
 
@@ -316,27 +317,7 @@ class Matcher:
         """Match consecutive original tokens within the same field and segment."""
         posting_lists = [self.index.posting(term)[2] for term in terms]
         candidates = self.eligible.intersection(*(set(postings) for postings in posting_lists))
-        found = set()
-        for document_id in candidates:
-            common_starts = None
-            for offset, postings in enumerate(posting_lists):
-                starts = set()
-                for field, positions in postings[document_id].items():
-                    if requested_field is not None and field != requested_field:
-                        continue
-                    for segment, position, _start, _end, original in positions:
-                        if original:
-                            # Consecutive phrase terms all lead back to the same start.
-                            starts.add((field, segment, position - offset))
-                if common_starts is None:
-                    common_starts = starts
-                else:
-                    common_starts.intersection_update(starts)
-                if not common_starts:
-                    break
-            if common_starts:
-                found.add(document_id)
-        return found
+        return {doc for doc in candidates if phrase_starts(posting_lists, doc, requested_field)}
 
     def docs(self, term, field):
         postings = self.index.posting(term)[2]
@@ -363,3 +344,22 @@ class Matcher:
         if len(terms) > self.settings["query_tokens"] + 3 * self.settings["expansion"]:
             raise QueryError("Combined expansions exceed the term budget. Use fewer or more specific prefixes or spelling variants.")
         return terms
+
+
+def phrase_starts(posting_lists, document_id, requested_field):
+    """Return the original (field, segment, position) starts of the phrase."""
+    common_starts = None
+    for offset, postings in enumerate(posting_lists):
+        starts = {
+            (field, segment, position - offset)
+            for field, positions in postings.get(document_id, {}).items()
+            if requested_field is None or field == requested_field
+            for segment, position, _start, _end, original in positions if original
+        }
+        if common_starts is None:
+            common_starts = starts
+        else:
+            common_starts.intersection_update(starts)
+        if not common_starts:
+            break
+    return common_starts or set()

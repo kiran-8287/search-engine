@@ -1,21 +1,21 @@
 # Implementation status
 
-| Area | Status | Evidence in the workspace |
-| --- | --- | --- |
-| Project configuration, setup and launch | Implemented | Python package, dependency declarations, config files and scripts |
-| Collector integration, scope, provenance and resumability | Implemented and fixture-tested | Both root collectors passed all 16 collector tests on Windows |
-| Active corpus and lexical indexes | Built and validated | Release `250a15ecd349951d6c69364c` has 15,345 documents from canonical snapshot `1a1a58867f0b20556402c331`. Standard and deep validation passed. |
-| Active exact dense and hybrid | Built and validated | The same release has 197,628 passages and 384-dimensional vectors. The pinned MiniLM revision is `1110a243fdf4706b3f48f1d95db1a4f5529b4d41`. |
-| Historical lexical experiments | Measured | Codec, TAAT/DAAT, retrieval and latent reports are saved for `6f86fc58d97fad8a0c0ec387` and `a585b9035a3c6cd217a93cbb`. Development benchmark and ablation runs are saved for `6f86fc58d97fad8a0c0ec387`. |
-| HTTP and browser interfaces | Implemented and smoke-tested on the active release | Chromium 159 checked Search and all three IR Lab tabs, including a live Semantic/Hybrid comparison and exports. See the [IR Lab guide](IR_LAB.md). |
-| Active Lab development measurements | Measured | The five displayed methods and BM25 + PageRank completed all 300 Development queries. Compression, TAAT/DAAT, retrieval/feedback and latent reports are available for the active indexes. |
-| Benchmark protocol and query catalog | Frozen, validation passed | 300 dev / 300 test, 25/class/split, no cross-split duplicate normalized queries; independent conformance fixtures |
-| AI relevance evaluation | Pending configuration and judgments | The active Lab Development pool has 12,080 pending pairs and zero cached judgments. The annotation key and model are unset. The held-out Test run remains sealed. |
-| Data acquisition | MDN and SO pilot exports saved | The pinned MDN run saved 12,650 structured pages. The later SO pilot reached 5,000 eligible questions. The active release still uses 2,748 eligible legacy SO questions. |
-| Fixture suite | Passed on Windows | All 59 tests passed, including Search and IR Lab against temporary fixture releases. |
-| Offline demo packaging | Archive and Windows runtime verified | The extracted bundle passed keyword, semantic and hybrid API searches with Python socket access and DNS blocked. A fresh disconnected installation and other destination OSes remain unverified. See the [demo run sheet](DEMO_RUN_SHEET.md). |
+Current course release checked on 27 November 2026. The original 300-query timings are from 25 November. The fixed 50-query Groq study has its own 27 November timings. See the [course report](PROJECT_REPORT.md) for measurements and limitations.
 
-The **42,374** passage count belongs to the earlier Linux dense release `0bc9d95b4db6f1357b62a591` on 7,691 legacy documents, as recorded in the work log. Its manifest is absent from this workspace. The active Windows build uses refreshed structured MDN and the same legacy SO input. Its final build log, manifest, and vector array agree on the release and passage count. The build process had exited when checked on 2026-11-22.
+| Area | Status | Evidence |
+| --- | --- | --- |
+| Structured source inputs | Admitted and audited | The structured MDN and Stack Overflow exports produced 12,597 pages and 5,000 threads. The threads contain 13,303 saved answers. The older prepared release and original exports remain available. [Data dictionary](DATA_DICTIONARY.md#course-corpus-admission) |
+| Lexical, dense and graph files | Built and deep-validated | Release `0a7d123cb6254929b6985dbd` has 17,597 parents and 252,965 passages. Files include all three codecs, exact float32 dense vectors, the passage map, and MDN PageRank. [Validation and build log](../artifacts/execution/course-final/) |
+| Search and IR Lab | Implemented and verified | All eight search modes and structured answer Preview passed. Auto distinguishes natural-language camelCase names from standalone identifiers. Search and Lab use the same release. [IR Lab guide](IR_LAB.md) |
+| Development results | Measured | Five baseline methods, paired BM25 + PageRank, TAAT/DAAT, compression, retrieval/feedback and LSI/K-means. The comparison uses 300 common Development queries. [Course report](PROJECT_REPORT.md#development-timing) |
+| Relevance | Blocked | 0 judgments and 12,286 pending Development pairs. Blinded prompt v2, resumable audit stages and a hard per-invocation request cap passed mocked tests. The private key, approved model and request authorization are pending. Test remains sealed. |
+| Groq Free subset | Timed, pilot rejected | Access confirmed. The pilot saved 50 provisional grades in 69 attempts. AI review found material relevance errors. The remaining 1,035 pairs are unjudged. [Study details](GROQ_STUDY.md) |
+| Groq v2 judging | Pilot rejected | 50 provisional pairs, 57 attempts, and 73,935 reported tokens. AI review found four unsupported primary grades and one unsupported adjudication. [V2 review](../artifacts/execution/groq-dev50/v2-pilot-ai-review.json) |
+| Human Development review | Awaiting a complete export | The offline page covers 1,085 pairs across 50 queries. The comparison accepts compatible human exports and requires all pairs to have numeric grades. [Review instructions](GROQ_V3.md) |
+| Software tests | Passed | The study review suite passed 92 tests. Chromium verified the real page, including separate grades for shared documents, preview, navigation, persistence and JSON round trips. |
+| Demo | Refreshed and verified on Windows | Use the [demo run sheet](DEMO_RUN_SHEET.md) for setup, checksum and exact package verification. |
+
+Historical results are tied to their own releases. The 42,374-passage Linux build and the 197,628-passage fallback Windows build are documented in the [execution report](EXECUTION_REPORT.md).
 
 ## Collector repair verification, 2026-11-22
 
